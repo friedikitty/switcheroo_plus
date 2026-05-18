@@ -1,9 +1,9 @@
-﻿/*
+﻿/**
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
  * Copyright 2014 Regin Larsen
- * 
+ *
  * Switcheroo is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -13,7 +13,7 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -37,7 +37,6 @@ using ManagedWinapi;
 using ManagedWinapi.Windows;
 using Switcheroo.Core;
 using Switcheroo.Core.Matchers;
-using Switcheroo.Properties;
 using Application = System.Windows.Application;
 using MenuItem = System.Windows.Forms.MenuItem;
 using MessageBox = System.Windows.MessageBox;
@@ -51,6 +50,7 @@ namespace Switcheroo
         private ObservableCollection<AppWindowViewModel> _filteredWindowList;
         private NotifyIcon _notifyIcon;
         private HotKey _hotkey;
+        private HotKey _previousAppHotkey;
 
         public static readonly RoutedUICommand CloseWindowCommand = new RoutedUICommand();
         public static readonly RoutedUICommand SwitchToWindowCommand = new RoutedUICommand();
@@ -62,15 +62,24 @@ namespace Switcheroo
         private SystemWindow _foregroundWindow;
         private bool _altTabAutoSwitch;
 
+        // Config + previous-app tracking
+        private SwitcherooConfig _config;
+        private SystemWindow _previousWindow;
+        private SystemWindow _currentWindow;
+
         public MainWindow()
         {
             InitializeComponent();
+
+            _config = ConfigManager.Load();
 
             SetUpKeyBindings();
 
             SetUpNotifyIcon();
 
             SetUpHotKey();
+
+            SetUpPreviousAppHotKey();
 
             SetUpAltTabHook();
 
@@ -109,6 +118,21 @@ namespace Switcheroo
                     tb.IsEnabled = true;
                     tb.Focus();
                 }
+                else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) && _config.AzShortcutsEnabled)
+                {
+                    // Alt+A through Alt+Z switches to the corresponding window
+                    var letter = KeyToLetter(args.SystemKey);
+                    if (!string.IsNullOrEmpty(letter))
+                    {
+                        var idx = letter[0] - 'A';
+                        if (idx >= 0 && idx < _filteredWindowList.Count)
+                        {
+                            Opacity = 0;
+                            SwitchToWindowByIndex(idx);
+                            args.Handled = true;
+                        }
+                    }
+                }
             };
 
             KeyUp += (sender, args) =>
@@ -133,6 +157,25 @@ namespace Switcheroo
             };
         }
 
+        private static string KeyToLetter(Key key)
+        {
+            if (key >= Key.A && key <= Key.Z)
+                return ((char)('A' + (key - Key.A))).ToString();
+            return null;
+        }
+
+        private void SwitchToWindowByIndex(int index)
+        {
+            if (index >= 0 && index < _filteredWindowList.Count)
+            {
+                var win = _filteredWindowList[index];
+                _previousWindow = _currentWindow;
+                _currentWindow = new SystemWindow(win.HWnd);
+                win.AppWindow.SwitchToLastVisibleActivePopup();
+                HideWindow();
+            }
+        }
+
         private void SetUpHotKey()
         {
             _hotkey = new HotKey();
@@ -143,7 +186,7 @@ namespace Switcheroo
             _hotkey.HotkeyPressed += hotkey_HotkeyPressed;
             try
             {
-                _hotkey.Enabled = Settings.Default.EnableHotKey;
+                _hotkey.Enabled = _config.EnableHotKey;
             }
             catch (HotkeyAlreadyInUseException)
             {
@@ -152,6 +195,35 @@ namespace Switcheroo
                               Environment.NewLine +
                               "You can change the hotkey by right-clicking the Switcheroo icon in the system tray and choosing 'Options'.";
                 MessageBox.Show(boxText, "Hotkey already in use", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void SetUpPreviousAppHotKey()
+        {
+            _previousAppHotkey = new HotKey();
+            _previousAppHotkey.LoadPreviousAppSettings();
+            _previousAppHotkey.HotkeyPressed += previousAppHotkey_Pressed;
+            try
+            {
+                _previousAppHotkey.Enabled = _config.PreviousAppEnabled;
+            }
+            catch (HotkeyAlreadyInUseException)
+            {
+                // Silently ignore if the previous-app hotkey is already in use
+            }
+        }
+
+        private void previousAppHotkey_Pressed(object sender, EventArgs e)
+        {
+            if (!_config.PreviousAppEnabled)
+                return;
+
+            if (_previousWindow != null && !_previousWindow.IsClosed)
+            {
+                var temp = _currentWindow;
+                _currentWindow = _previousWindow;
+                _previousWindow = temp;
+                SystemWindow.ForegroundWindow = _currentWindow;
             }
         }
 
@@ -277,6 +349,15 @@ namespace Switcheroo
                 foregroundWindowMovedToBottom = true;
             }
 
+            // Assign A-Z shortcut keys
+            if (_config.AzShortcutsEnabled)
+            {
+                for (int i = 0; i < _unfilteredWindowList.Count && i < 26; i++)
+                {
+                    _unfilteredWindowList[i].ShortcutKey = ((char)('A' + i)).ToString();
+                }
+            }
+
             _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
             _windowCloser = new WindowCloser();
 
@@ -296,6 +377,9 @@ namespace Switcheroo
             tb.Focus();
             CenterWindow();
             ScrollSelectedItemIntoView();
+
+            // Remember the current foreground window before we switch
+            _currentWindow = SystemWindow.ForegroundWindow;
         }
 
         private static bool AreWindowsRelated(SystemWindow window1, SystemWindow window2)
@@ -346,6 +430,8 @@ namespace Switcheroo
             foreach (var item in lb.SelectedItems)
             {
                 var win = (AppWindowViewModel)item;
+                _previousWindow = _currentWindow;
+                _currentWindow = new SystemWindow(win.HWnd);
                 win.AppWindow.SwitchToLastVisibleActivePopup();
             }
 
@@ -420,6 +506,8 @@ namespace Switcheroo
             _notifyIcon.Dispose();
             _notifyIcon = null;
             _hotkey.Dispose();
+            if (_previousAppHotkey != null)
+                _previousAppHotkey.Dispose();
             Application.Current.Shutdown();
         }
 
@@ -438,7 +526,7 @@ namespace Switcheroo
 
         private void hotkey_HotkeyPressed(object sender, EventArgs e)
         {
-            if (!Settings.Default.EnableHotKey)
+            if (!_config.EnableHotKey)
             {
                 return;
             }
@@ -462,7 +550,7 @@ namespace Switcheroo
 
         private void AltTabPressed(object sender, AltTabHookEventArgs e)
         {
-            if (!Settings.Default.AltTabHook)
+            if (!_config.AltTabHook)
             {
                 // Ignore Alt+Tab presses if the hook is not activated by the user
                 return;
@@ -494,7 +582,7 @@ namespace Switcheroo
                     LoadData(InitialFocus.NextItem);
                 }
 
-                if (Settings.Default.AutoSwitch && !e.CtrlDown)
+                if (_config.AutoSwitch && !e.CtrlDown)
                 {
                     _altTabAutoSwitch = true;
                     tb.IsEnabled = false;

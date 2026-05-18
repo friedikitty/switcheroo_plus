@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -72,6 +72,18 @@ namespace Switcheroo
             {
                 _isBeingClosed = value;
                 NotifyOfPropertyChange(() => IsBeingClosed);
+            }
+        }
+
+        private string _shortcutKey = "";
+
+        public string ShortcutKey
+        {
+            get { return _shortcutKey; }
+            set
+            {
+                _shortcutKey = value;
+                NotifyOfPropertyChange(() => ShortcutKey);
             }
         }
 

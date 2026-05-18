@@ -1,9 +1,9 @@
-﻿/*
+﻿/**
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
  * Copyright 2014 Regin Larsen
- * 
+ *
  * Switcheroo is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -13,7 +13,7 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -91,7 +91,8 @@ namespace Switcheroo
 
         private static bool RunAsAdminRequested()
         {
-            return Settings.Default.RunAsAdmin;
+            var cfg = ConfigManager.Load();
+            return cfg.RunAsAdmin;
         }
 
         private static void MakePortable(ApplicationSettingsBase settings)
@@ -112,6 +113,19 @@ namespace Switcheroo
             Settings.Default.Upgrade();
             Settings.Default.FirstRun = false;
             Settings.Default.Save();
+
+            // Also migrate legacy settings into the new JSONC config
+            var cfg = ConfigManager.Load();
+            cfg.ActivateAlt = Settings.Default.Alt;
+            cfg.ActivateCtrl = Settings.Default.Ctrl;
+            cfg.ActivateShift = Settings.Default.Shift;
+            cfg.ActivateWindowsKey = Settings.Default.WindowsKey;
+            cfg.ActivateHotKey = Settings.Default.HotKey;
+            cfg.AltTabHook = Settings.Default.AltTabHook;
+            cfg.AutoSwitch = Settings.Default.AutoSwitch;
+            cfg.RunAsAdmin = Settings.Default.RunAsAdmin;
+            cfg.EnableHotKey = Settings.Default.EnableHotKey;
+            ConfigManager.Save(cfg);
         }
 
         private static bool IsRunAsAdmin()

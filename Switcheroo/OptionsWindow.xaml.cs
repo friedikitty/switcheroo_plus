@@ -1,9 +1,9 @@
-﻿/*
+/**
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
  * Copyright 2014 Regin Larsen
- * 
+ *
  * Switcheroo is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -13,7 +13,7 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -24,7 +24,6 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using ManagedWinapi;
 using Switcheroo.Core;
-using Switcheroo.Properties;
 using Application = System.Windows.Application;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MessageBox = System.Windows.MessageBox;
@@ -35,10 +34,14 @@ namespace Switcheroo
     {
         private readonly HotKey _hotkey;
         private HotkeyViewModel _hotkeyViewModel;
+        private HotkeyViewModel _previousAppViewModel;
+        private SwitcherooConfig _config;
 
         public OptionsWindow()
         {
             InitializeComponent();
+
+            _config = ConfigManager.Load();
 
             // Show what's already selected     
             _hotkey = (HotKey) Application.Current.Properties["hotkey"];
@@ -60,13 +63,26 @@ namespace Switcheroo
                 Shift = _hotkey.Shift
             };
 
-            HotKeyCheckBox.IsChecked = Settings.Default.EnableHotKey;
+            _previousAppViewModel = new HotkeyViewModel
+            {
+                KeyCode = KeyInterop.KeyFromVirtualKey(_config.PreviousAppHotKey),
+                Alt = _config.PreviousAppAlt,
+                Ctrl = _config.PreviousAppCtrl,
+                Windows = _config.PreviousAppWindowsKey,
+                Shift = _config.PreviousAppShift
+            };
+
+            HotKeyCheckBox.IsChecked = _config.EnableHotKey;
             HotkeyPreview.Text = _hotkeyViewModel.ToString();
-            HotkeyPreview.IsEnabled = Settings.Default.EnableHotKey;
-            AltTabCheckBox.IsChecked = Settings.Default.AltTabHook;
-            AutoSwitch.IsChecked = Settings.Default.AutoSwitch;
-            AutoSwitch.IsEnabled = Settings.Default.AltTabHook;
-            RunAsAdministrator.IsChecked = Settings.Default.RunAsAdmin;
+            HotkeyPreview.IsEnabled = _config.EnableHotKey;
+            AltTabCheckBox.IsChecked = _config.AltTabHook;
+            AutoSwitch.IsChecked = _config.AutoSwitch;
+            AutoSwitch.IsEnabled = _config.AltTabHook;
+            AzShortcutsCheckBox.IsChecked = _config.AzShortcutsEnabled;
+            PreviousAppCheckBox.IsChecked = _config.PreviousAppEnabled;
+            PreviousAppPreview.Text = _previousAppViewModel.ToString();
+            PreviousAppPreview.IsEnabled = _config.PreviousAppEnabled;
+            RunAsAdministrator.IsChecked = _config.RunAsAdmin;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -82,7 +98,7 @@ namespace Switcheroo
             {
                 _hotkey.Enabled = false;
 
-                if (Settings.Default.EnableHotKey)
+                if (_config.EnableHotKey)
                 {
                     // Change the active hotkey
                     _hotkey.Alt = _hotkeyViewModel.Alt;
@@ -103,11 +119,18 @@ namespace Switcheroo
                 closeOptionsWindow = false;
             }
 
-            Settings.Default.EnableHotKey = HotKeyCheckBox.IsChecked.GetValueOrDefault();
-            Settings.Default.AltTabHook = AltTabCheckBox.IsChecked.GetValueOrDefault();
-            Settings.Default.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
-            Settings.Default.RunAsAdmin = RunAsAdministrator.IsChecked.GetValueOrDefault();
-            Settings.Default.Save();
+            _config.EnableHotKey = HotKeyCheckBox.IsChecked.GetValueOrDefault();
+            _config.AltTabHook = AltTabCheckBox.IsChecked.GetValueOrDefault();
+            _config.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
+            _config.AzShortcutsEnabled = AzShortcutsCheckBox.IsChecked.GetValueOrDefault();
+            _config.PreviousAppEnabled = PreviousAppCheckBox.IsChecked.GetValueOrDefault();
+            _config.PreviousAppAlt = _previousAppViewModel.Alt;
+            _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;
+            _config.PreviousAppShift = _previousAppViewModel.Shift;
+            _config.PreviousAppWindowsKey = _previousAppViewModel.Windows;
+            _config.PreviousAppHotKey = KeyInterop.VirtualKeyFromKey(_previousAppViewModel.KeyCode);
+            _config.RunAsAdmin = RunAsAdministrator.IsChecked.GetValueOrDefault();
+            ConfigManager.Save(_config);
 
             if (closeOptionsWindow)
             {
@@ -117,34 +140,13 @@ namespace Switcheroo
 
         private void HotkeyPreview_OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
-            // The text box grabs all input
             e.Handled = true;
-
-            // Fetch the actual shortcut key
             var key = (e.Key == Key.System ? e.SystemKey : e.Key);
+            if (IsModifierKey(key)) return;
 
-            // Ignore modifier keys
-            if (key == Key.LeftShift || key == Key.RightShift
-                || key == Key.LeftCtrl || key == Key.RightCtrl
-                || key == Key.LeftAlt || key == Key.RightAlt
-                || key == Key.LWin || key == Key.RWin)
-            {
-                return;
-            }
+            _hotkeyViewModel = BuildViewModelFromKeyEvent(key);
+            var previewText = _hotkeyViewModel.ToString();
 
-            var previewHotkeyModel = new HotkeyViewModel();
-            previewHotkeyModel.Ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
-            previewHotkeyModel.Shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-            previewHotkeyModel.Alt = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
-
-            var winLKey = new KeyboardKey(Keys.LWin);
-            var winRKey = new KeyboardKey(Keys.RWin);
-            previewHotkeyModel.Windows = (winLKey.State & 0x8000) == 0x8000 || (winRKey.State & 0x8000) == 0x8000;
-            previewHotkeyModel.KeyCode = key;
-
-            var previewText = previewHotkeyModel.ToString();
-
-            // Jump to the next element if the user presses only the Tab key
             if (previewText == "Tab")
             {
                 ((UIElement) sender).MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
@@ -152,7 +154,46 @@ namespace Switcheroo
             }
 
             HotkeyPreview.Text = previewText;
-            _hotkeyViewModel = previewHotkeyModel;
+        }
+
+        private void PreviousAppPreview_OnPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            e.Handled = true;
+            var key = (e.Key == Key.System ? e.SystemKey : e.Key);
+            if (IsModifierKey(key)) return;
+
+            _previousAppViewModel = BuildViewModelFromKeyEvent(key);
+            var previewText = _previousAppViewModel.ToString();
+
+            if (previewText == "Tab")
+            {
+                ((UIElement) sender).MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+                return;
+            }
+
+            PreviousAppPreview.Text = previewText;
+        }
+
+        private static bool IsModifierKey(Key key)
+        {
+            return key == Key.LeftShift || key == Key.RightShift
+                || key == Key.LeftCtrl || key == Key.RightCtrl
+                || key == Key.LeftAlt || key == Key.RightAlt
+                || key == Key.LWin || key == Key.RWin;
+        }
+
+        private static HotkeyViewModel BuildViewModelFromKeyEvent(Key key)
+        {
+            var vm = new HotkeyViewModel();
+            vm.Ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            vm.Shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+            vm.Alt = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
+
+            var winLKey = new KeyboardKey(Keys.LWin);
+            var winRKey = new KeyboardKey(Keys.RWin);
+            vm.Windows = (winLKey.State & 0x8000) == 0x8000 || (winRKey.State & 0x8000) == 0x8000;
+            vm.KeyCode = key;
+            return vm;
         }
 
         private class HotkeyViewModel
@@ -223,6 +264,15 @@ namespace Switcheroo
             }
         }
 
+        private void PreviousAppPreview_OnGotFocus(object sender, RoutedEventArgs e)
+        {
+            // No need to disable main hotkey here
+        }
+
+        private void PreviousAppPreview_OnLostFocus(object sender, RoutedEventArgs e)
+        {
+        }
+
         private void AltTabCheckBox_OnChecked(object sender, RoutedEventArgs e)
         {
             AutoSwitch.IsEnabled = true;
@@ -242,6 +292,16 @@ namespace Switcheroo
         private void HotKeyCheckBox_OnUnchecked(object sender, RoutedEventArgs e)
         {
             HotkeyPreview.IsEnabled = false;
+        }
+
+        private void PreviousAppCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            PreviousAppPreview.IsEnabled = true;
+        }
+
+        private void PreviousAppCheckBox_OnUnchecked(object sender, RoutedEventArgs e)
+        {
+            PreviousAppPreview.IsEnabled = false;
         }
     }
 }
