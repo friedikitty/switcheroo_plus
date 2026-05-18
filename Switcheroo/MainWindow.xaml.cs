@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
@@ -96,6 +96,50 @@ namespace Switcheroo
 
         private void SetUpKeyBindings()
         {
+            // Intercept 0-9, A-Z, and / before child controls see them
+            PreviewKeyDown += (sender, args) =>
+            {
+                if (tb.IsKeyboardFocused)
+                    return;
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                    return;
+
+                // 0-9 direct switch
+                int digitIndex = -1;
+                if (args.Key >= Key.D0 && args.Key <= Key.D9)
+                    digitIndex = args.Key - Key.D0;
+                else if (args.Key >= Key.NumPad0 && args.Key <= Key.NumPad9)
+                    digitIndex = args.Key - Key.NumPad0;
+
+                if (digitIndex >= 0 && digitIndex < _filteredWindowList.Count)
+                {
+                    SwitchToWindowByIndex(digitIndex);
+                    args.Handled = true;
+                    return;
+                }
+
+                // A-Z direct switch (index 10-35)
+                if (args.Key >= Key.A && args.Key <= Key.Z)
+                {
+                    int idx = 10 + (args.Key - Key.A);
+                    if (idx < _filteredWindowList.Count)
+                    {
+                        SwitchToWindowByIndex(idx);
+                        args.Handled = true;
+                    }
+                    return;
+                }
+
+                // / focuses search box (vim-style)
+                if (args.Key == Key.Oem2 || args.Key == Key.Divide || args.Key == Key.OemQuestion)
+                {
+                    tb.Focus();
+                    tb.SelectAll();
+                    args.Handled = true;
+                    return;
+                }
+            };
+
             // Enter and Esc bindings are not executed before the keys have been released.
             // This is done to prevent that the window being focused after the key presses
             // to get 'KeyUp' messages.
@@ -117,21 +161,6 @@ namespace Switcheroo
                     tb.Text = "";
                     tb.IsEnabled = true;
                     tb.Focus();
-                }
-                else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) && _config.AzShortcutsEnabled)
-                {
-                    // Alt+A through Alt+Z switches to the corresponding window
-                    var letter = KeyToLetter(args.SystemKey);
-                    if (!string.IsNullOrEmpty(letter))
-                    {
-                        var idx = letter[0] - 'A';
-                        if (idx >= 0 && idx < _filteredWindowList.Count)
-                        {
-                            Opacity = 0;
-                            SwitchToWindowByIndex(idx);
-                            args.Handled = true;
-                        }
-                    }
                 }
             };
 
@@ -155,13 +184,6 @@ namespace Switcheroo
                     Switch();
                 }
             };
-        }
-
-        private static string KeyToLetter(Key key)
-        {
-            if (key >= Key.A && key <= Key.Z)
-                return ((char)('A' + (key - Key.A))).ToString();
-            return null;
         }
 
         private void SwitchToWindowByIndex(int index)
@@ -255,8 +277,8 @@ namespace Switcheroo
                     new MenuItem("Exit", (s, e) => Quit())
                 })
             };
+            _notifyIcon.DoubleClick += (s, e) => hotkey_HotkeyPressed(s, e);
         }
-
         private static void RunOnStartup(MenuItem menuItem)
         {
             try
@@ -349,12 +371,15 @@ namespace Switcheroo
                 foregroundWindowMovedToBottom = true;
             }
 
-            // Assign A-Z shortcut keys
+            // Assign shortcut keys: 0-9 first, then A-Z
             if (_config.AzShortcutsEnabled)
             {
-                for (int i = 0; i < _unfilteredWindowList.Count && i < 26; i++)
+                for (int i = 0; i < _unfilteredWindowList.Count && i < 36; i++)
                 {
-                    _unfilteredWindowList[i].ShortcutKey = ((char)('A' + i)).ToString();
+                    if (i < 10)
+                        _unfilteredWindowList[i].ShortcutKey = i.ToString();
+                    else
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('A' + (i - 10))).ToString();
                 }
             }
 
@@ -374,9 +399,15 @@ namespace Switcheroo
             FocusItemInList(focus, foregroundWindowMovedToBottom);
 
             tb.Clear();
-            tb.Focus();
             CenterWindow();
             ScrollSelectedItemIntoView();
+
+            // Focus the list so 0-9/A-Z work immediately; / will focus the text box
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (lb.Items.Count > 0)
+                    Keyboard.Focus(lb);
+            }), DispatcherPriority.Render);
 
             // Remember the current foreground window before we switch
             _currentWindow = SystemWindow.ForegroundWindow;
@@ -469,8 +500,11 @@ namespace Switcheroo
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
-                _optionsWindow.Closed += (sender, args) => _optionsWindow = null;
-                _optionsWindow.ShowDialog();
+                _optionsWindow.Closed += (sender, args) =>
+                {
+                    _optionsWindow = null;
+                    ReloadConfig();
+                };
             }
             else
             {
@@ -511,9 +545,61 @@ namespace Switcheroo
             Application.Current.Shutdown();
         }
 
-        #endregion
+        private void ReloadConfig()
+        {
+            _config = ConfigManager.Load();
+
+            // Refresh previous-app hotkey state (OptionsWindow doesn't manage this object)
+            if (_previousAppHotkey != null)
+            {
+                _previousAppHotkey.LoadPreviousAppSettings();
+                try { _previousAppHotkey.Enabled = _config.PreviousAppEnabled; }
+                catch (HotkeyAlreadyInUseException) { }
+            }
+        }
+
+        private void MenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = new System.Windows.Controls.ContextMenu();
+
+            var optionsItem = new System.Windows.Controls.MenuItem { Header = "Options" };
+            optionsItem.Click += (s, ev) => Options();
+            menu.Items.Add(optionsItem);
+
+            var runOnStartupItem = new System.Windows.Controls.MenuItem { Header = "Run on Startup", IsCheckable = true };
+            runOnStartupItem.IsChecked = new AutoStart().IsEnabled;
+            runOnStartupItem.Click += (s, ev) =>
+            {
+                try
+                {
+                    var autoStart = new AutoStart { IsEnabled = runOnStartupItem.IsChecked };
+                    runOnStartupItem.IsChecked = autoStart.IsEnabled;
+                }
+                catch (AutoStartException ex)
+                {
+                    MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            };
+            menu.Items.Add(runOnStartupItem);
+
+            var aboutItem = new System.Windows.Controls.MenuItem { Header = "About" };
+            aboutItem.Click += (s, ev) => About();
+            menu.Items.Add(aboutItem);
+
+            menu.Items.Add(new System.Windows.Controls.Separator());
+
+            var exitItem = new System.Windows.Controls.MenuItem { Header = "Exit" };
+            exitItem.Click += (s, ev) => Quit();
+            menu.Items.Add(exitItem);
+
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.PlacementTarget = (UIElement)sender;
+            menu.IsOpen = true;
+        }
 
         /// =================================
+
+        #endregion
 
         #region Event Handlers
 
@@ -526,7 +612,8 @@ namespace Switcheroo
 
         private void hotkey_HotkeyPressed(object sender, EventArgs e)
         {
-            if (!_config.EnableHotKey)
+            var cfg = ConfigManager.Load();
+            if (!cfg.EnableHotKey)
             {
                 return;
             }
@@ -538,7 +625,6 @@ namespace Switcheroo
                 _foregroundWindow = SystemWindow.ForegroundWindow;
                 Show();
                 Activate();
-                Keyboard.Focus(tb);
                 LoadData(InitialFocus.NextItem);
                 Opacity = 1;
             }
@@ -550,7 +636,8 @@ namespace Switcheroo
 
         private void AltTabPressed(object sender, AltTabHookEventArgs e)
         {
-            if (!_config.AltTabHook)
+            var cfg = ConfigManager.Load();
+            if (!cfg.AltTabHook)
             {
                 // Ignore Alt+Tab presses if the hook is not activated by the user
                 return;
@@ -572,7 +659,6 @@ namespace Switcheroo
 
                 ActivateAndFocusMainWindow();
 
-                Keyboard.Focus(tb);
                 if (e.ShiftDown)
                 {
                     LoadData(InitialFocus.PreviousItem);
@@ -582,7 +668,7 @@ namespace Switcheroo
                     LoadData(InitialFocus.NextItem);
                 }
 
-                if (_config.AutoSwitch && !e.CtrlDown)
+                if (cfg.AutoSwitch && !e.CtrlDown)
                 {
                     _altTabAutoSwitch = true;
                     tb.IsEnabled = false;

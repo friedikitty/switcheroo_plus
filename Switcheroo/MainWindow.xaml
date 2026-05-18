@@ -68,8 +68,13 @@
                 </StackPanel>
             </DockPanel>
             <Grid DockPanel.Dock="Top">
-                <TextBox Name="tb" Padding="5" VerticalAlignment="Top" TextChanged="TextChanged" FontSize="15"
-                         VerticalContentAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Name="tb" Grid.Column="0" Padding="5" VerticalAlignment="Top" TextChanged="TextChanged" FontSize="15"
+                         VerticalContentAlignment="Center" Margin="0,0,5,0">
                     <TextBox.InputBindings>
                         <!-- For now, leave these here.  Would it be better to route them upward? -->
                         <KeyBinding Command="local:MainWindow.ScrollListUpCommand" Key="Up" />
@@ -78,7 +83,10 @@
                         <KeyBinding Command="local:MainWindow.ScrollListDownCommand" Key="Tab" />
                     </TextBox.InputBindings>
                 </TextBox>
-                <TextBlock Margin="0,0,10,0" Width="15" HorizontalAlignment="Right" TextAlignment="Center"
+                <Button Name="MenuButton" Grid.Column="1" Content="..." Click="MenuButton_Click"
+                        Margin="0,0,5,0" Width="24" Height="24" VerticalAlignment="Center"
+                        FontSize="10" FontWeight="Bold" Background="Transparent" BorderBrush="DarkGray" />
+                <TextBlock Grid.Column="2" Margin="0,0,10,0" Width="15" TextAlignment="Center"
                            VerticalAlignment="Center"
                            FontSize="18" FontWeight="Bold" Opacity="0.4"
                            PreviewMouseDown="ShowHelpTextBlock_OnPreviewMouseDown"

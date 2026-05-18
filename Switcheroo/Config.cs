@@ -52,6 +52,7 @@ namespace Switcheroo
         public bool AutoSwitch { get; set; } = false;
         public bool RunAsAdmin { get; set; } = false;
         public bool EnableHotKey { get; set; } = true;
+        public bool RunOnStartup { get; set; } = false;
 
         // A-Z overlay shortcuts
         public bool AzShortcutsEnabled { get; set; } = true;
@@ -235,6 +236,7 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"AutoSwitch\": {0},", Bool(cfg.AutoSwitch)));
             sb.AppendLine(string.Format("  \"RunAsAdmin\": {0},", Bool(cfg.RunAsAdmin)));
             sb.AppendLine(string.Format("  \"EnableHotKey\": {0},", Bool(cfg.EnableHotKey)));
+            sb.AppendLine(string.Format("  \"RunOnStartup\": {0},", Bool(cfg.RunOnStartup)));
             sb.AppendLine();
             sb.AppendLine("  // Show A-Z shortcuts in the overlay");
             sb.AppendLine(string.Format("  \"AzShortcutsEnabled\": {0}", Bool(cfg.AzShortcutsEnabled)));

@@ -42,6 +42,7 @@ namespace Switcheroo
             InitializeComponent();
 
             _config = ConfigManager.Load();
+            RunOnStartup.IsChecked = _config.RunOnStartup || new AutoStart().IsEnabled;
 
             // Show what's already selected     
             _hotkey = (HotKey) Application.Current.Properties["hotkey"];
@@ -130,6 +131,8 @@ namespace Switcheroo
             _config.PreviousAppWindowsKey = _previousAppViewModel.Windows;
             _config.PreviousAppHotKey = KeyInterop.VirtualKeyFromKey(_previousAppViewModel.KeyCode);
             _config.RunAsAdmin = RunAsAdministrator.IsChecked.GetValueOrDefault();
+            _config.RunOnStartup = RunOnStartup.IsChecked.GetValueOrDefault();
+            new AutoStart { IsEnabled = _config.RunOnStartup };
             ConfigManager.Save(_config);
 
             if (closeOptionsWindow)
