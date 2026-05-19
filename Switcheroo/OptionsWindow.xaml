@@ -29,9 +29,13 @@
                 Use <Span FontFamily="Consolas" FontWeight="Bold">Ctrl + Alt + Tab</Span> for displaying Switcheroo with search activated, or
                 press <Span FontFamily="Consolas" FontWeight="Bold">Alt + S</Span> when the Switcheroo overlay appears.
             </TextBlock>
-            <CheckBox Name="AzShortcutsCheckBox" Margin="5,5,5,1">Show A-Z shortcuts in the overlay</CheckBox>
+            <CheckBox Name="AzShortcutsCheckBox" Margin="5,5,5,1">Show 0-9 / A-Z shortcuts in the overlay</CheckBox>
             <TextBlock Margin="25,0,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
-                Press <Span FontFamily="Consolas" FontWeight="Bold">Alt + A</Span> through <Span FontFamily="Consolas" FontWeight="Bold">Alt + Z</Span> to switch to the corresponding window.
+                Press the displayed <Span FontFamily="Consolas" FontWeight="Bold">0-9</Span> or <Span FontFamily="Consolas" FontWeight="Bold">A-Z</Span> key to jump straight to that window.
+            </TextBlock>
+            <CheckBox Name="OpenUsageHintsByDefaultCheckBox" Margin="5,5,5,1">Open the usage hints by default</CheckBox>
+            <TextBlock Margin="25,0,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
+                Expand the <Span FontFamily="Consolas" FontWeight="Bold">?</Span> help strip every time Switcheroo opens. You can still toggle it manually.
             </TextBlock>
             <CheckBox Name="PreviousAppCheckBox" Margin="5,5,5,1" Checked="PreviousAppCheckBox_Checked" Unchecked="PreviousAppCheckBox_OnUnchecked">Switch back to previous app with this shortcut:</CheckBox>
             <TextBox Name="PreviousAppPreview" Margin="25,5,0,10"

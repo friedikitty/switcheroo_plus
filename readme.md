@@ -2,8 +2,9 @@
 ==========
 
 Switcheroo is for anyone who spends more time using a keyboard than a mouse.
-Instead of alt-tabbing through a (long) list of open windows, Switcheroo allows
-you to quickly switch to any window by typing in just a few characters of its title.
+Instead of alt-tabbing through a (long) list of open windows, Switcheroo lets
+you jump straight to the window you want: search by title, press the displayed
+shortcut character, or flip back to the previous app with a dedicated hotkey.
 
 ## Screenshot
 
@@ -21,15 +22,18 @@ If you use [Chocolatey](https://chocolatey.org), Switcheroo can be installed wit
 Usage
 -----
 
-Action                         | Shortcut        | Remarks
------------------------------- | --------------- | ----------
-Activate Switcheroo            | `Alt + Space`   | This shortcut can be customized in _Options_
-Activate Switcheroo            | `Alt + Tab`     | Only works if enabled under _Options_
-_When Switcheroo is open_      |                 |
-Switch to selected window      | `Enter`         |
-Close selected window          | `Ctrl + W`      |
-Dismiss Switcheroo             | `Esc`           |
-
+Action                         | Shortcut                | Remarks
+------------------------------ | ----------------------- | ----------
+Activate Switcheroo            | `Alt + Space`           | This shortcut can be customized in _Options_
+Activate Switcheroo            | `Alt + Tab`             | Optional replacement for the built-in Windows switcher
+Switch to previous app         | configurable            | Optional direct toggle without showing the overlay
+_When Switcheroo is open_      |                         |
+Quick jump to a result         | displayed `0-9` / `A-Z` | Press the character shown in the overlay
+Search by text                 | `type` or `/`           | `/` focuses the search box if list navigation has focus
+Move selection                 | `Tab`, `Shift + Tab`, `↑`, `↓` | Navigate the current result list
+Open selected window           | `Enter`                 |
+Close selected window          | `Ctrl + W`              |
+Dismiss Switcheroo             | `Esc`                   |
 
 
 History

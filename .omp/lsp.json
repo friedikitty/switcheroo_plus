@@ -1,0 +1,9 @@
+{
+  "servers": [
+    {
+      "name": "omnisharp",
+      "command": ["omnisharp", "--languageserver"],
+      "fileTypes": ["cs"]
+    }
+  ]
+}

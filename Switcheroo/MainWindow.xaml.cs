@@ -61,6 +61,7 @@ namespace Switcheroo
         private AltTabHook _altTabHook;
         private SystemWindow _foregroundWindow;
         private bool _altTabAutoSwitch;
+        private bool _isHelpPanelExpanded;
 
         // Config + previous-app tracking
         private SwitcherooConfig _config;
@@ -86,6 +87,7 @@ namespace Switcheroo
             CheckForUpdates();
 
             Opacity = 0;
+            SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
         }
 
         /// =================================
@@ -398,6 +400,7 @@ namespace Switcheroo
 
             FocusItemInList(focus, foregroundWindowMovedToBottom);
 
+            SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
             tb.Clear();
             CenterWindow();
             ScrollSelectedItemIntoView();
@@ -505,6 +508,7 @@ namespace Switcheroo
                     _optionsWindow = null;
                     ReloadConfig();
                 };
+                _optionsWindow.ShowDialog();
             }
             else
             {
@@ -556,6 +560,7 @@ namespace Switcheroo
                 try { _previousAppHotkey.Enabled = _config.PreviousAppEnabled; }
                 catch (HotkeyAlreadyInUseException) { }
             }
+            SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
         }
 
         private void MenuButton_Click(object sender, RoutedEventArgs e)
@@ -885,9 +890,22 @@ namespace Switcheroo
 
         private void ShowHelpTextBlock_OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
+            SetHelpPanelExpanded(!_isHelpPanelExpanded, true);
+        }
+        private void SetHelpPanelExpanded(bool expanded, bool animate)
+        {
+            _isHelpPanelExpanded = expanded;
+            var newHeight = expanded ? 17 : 0;
+
+            if (!animate)
+            {
+                HelpPanel.BeginAnimation(HeightProperty, null);
+                HelpPanel.Height = newHeight;
+                return;
+            }
+
             var duration = new Duration(TimeSpan.FromSeconds(0.150));
-            var newHeight = HelpPanel.Height > 0 ? 0 : +17;
-            HelpPanel.BeginAnimation(HeightProperty, new DoubleAnimation(HelpPanel.Height, newHeight, duration));
+            HelpPanel.BeginAnimation(HeightProperty, new DoubleAnimation(HelpPanel.ActualHeight, newHeight, duration));
         }
 
         #endregion

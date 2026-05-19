@@ -38,12 +38,21 @@
         <DockPanel LastChildFill="True">
             <DockPanel Margin="4,0,4,0" Name="HelpPanel" Background="Transparent" Height="0" DockPanel.Dock="Top">
                 <TextBlock FontSize="10" DockPanel.Dock="Left">
-                    type to search
+                    <TextBlock.ToolTip>
+                        <TextBlock>Press <Bold>/</Bold> to focus the search box and filter by window title or process name</TextBlock>
+                    </TextBlock.ToolTip>
+                    <Bold>/</Bold> to search by text
                 </TextBlock>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                     <TextBlock FontSize="10" Margin="0,0,8,0">
                         <TextBlock.ToolTip>
-                            <TextBlock>Press <Bold>tab</Bold> or <Bold>↑↓</Bold> to navigate in the list</TextBlock>
+                            <TextBlock>Press the displayed <Bold>0-9</Bold> or <Bold>A-Z</Bold> key to jump straight to that window</TextBlock>
+                        </TextBlock.ToolTip>
+                        <Bold>0-9</Bold>/<Bold>A-Z</Bold> to quick jump
+                    </TextBlock>
+                    <TextBlock FontSize="10" Margin="0,0,8,0">
+                        <TextBlock.ToolTip>
+                            <TextBlock>Press <Bold>tab</Bold> or <Bold>↑↓</Bold> to move through the list</TextBlock>
                         </TextBlock.ToolTip>
                         <Bold>tab</Bold> or <Bold>↑↓</Bold> to navigate
                     </TextBlock>
@@ -51,19 +60,19 @@
                         <TextBlock.ToolTip>
                             <TextBlock>Press <Bold>enter</Bold> to open the highlighted window</TextBlock>
                         </TextBlock.ToolTip>
-                        <Bold>enter</Bold> to open a window
+                        <Bold>enter</Bold> to open
                     </TextBlock>
                     <TextBlock FontSize="10" Margin="0,0,8,0">
                         <TextBlock.ToolTip>
                             <TextBlock>Press <Bold>ctrl+w</Bold> to close the highlighted window</TextBlock>
                         </TextBlock.ToolTip>
-                        <Bold>ctrl+w</Bold> to close a window
+                        <Bold>ctrl+w</Bold> to close
                     </TextBlock>
                     <TextBlock FontSize="10">
                         <TextBlock.ToolTip>
                             <TextBlock>Press <Bold>esc</Bold> to dismiss the Switcheroo overlay</TextBlock>
                         </TextBlock.ToolTip>
-                        <Bold>esc</Bold> to dismiss switcheroo
+                        <Bold>esc</Bold> to dismiss
                     </TextBlock>
                 </StackPanel>
             </DockPanel>
