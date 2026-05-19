@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Switcheroo"
         xmlns:system="clr-namespace:System;assembly=mscorlib"
-        Closing="OnClose" ResizeMode="NoResize" ShowInTaskbar="False" WindowStyle="None" AllowsTransparency="True"
+        Closing="OnClose" ResizeMode="CanResize" ShowInTaskbar="False" WindowStyle="None" AllowsTransparency="True"
         SizeToContent="WidthAndHeight"
         Title="" MinWidth="542" Deactivated="MainWindow_OnLostFocus" Loaded="MainWindow_OnLoaded"
         BorderBrush="Transparent" BorderThickness="1"
@@ -32,6 +32,12 @@
     <Window.Resources>
         <local:WindowHandleToIconConverter x:Key="WindowHandleToIconConverter" />
         <local:WindowHandleToCachedIconConverter x:Key="WindowHandleToCachedIconConverter" />
+        <ItemsPanelTemplate x:Key="SingleColumnPanel">
+            <VirtualizingStackPanel />
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="MultiColumnPanel">
+            <WrapPanel Orientation="Vertical" />
+        </ItemsPanelTemplate>
     </Window.Resources>
 
     <Border Padding="3" Background="White" BorderBrush="DarkGray" BorderThickness="1" Name="Border">
@@ -46,9 +52,9 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                     <TextBlock FontSize="10" Margin="0,0,8,0">
                         <TextBlock.ToolTip>
-                            <TextBlock>Press the displayed <Bold>0-9</Bold> or <Bold>A-Z</Bold> key to jump straight to that window</TextBlock>
+                            <TextBlock>Press the displayed <Bold>0-9</Bold>, <Bold>a-z</Bold> or <Bold>A-Z</Bold> key to jump straight to that window</TextBlock>
                         </TextBlock.ToolTip>
-                        <Bold>0-9</Bold>/<Bold>A-Z</Bold> to quick jump
+                        <Bold>0-9</Bold>/<Bold>a-z</Bold>/<Bold>A-Z</Bold> to quick jump
                     </TextBlock>
                     <TextBlock FontSize="10" Margin="0,0,8,0">
                         <TextBlock.ToolTip>

@@ -28,12 +28,16 @@ Activate Switcheroo            | `Alt + Space`           | This shortcut can be 
 Activate Switcheroo            | `Alt + Tab`             | Optional replacement for the built-in Windows switcher
 Switch to previous app         | configurable            | Optional direct toggle without showing the overlay
 _When Switcheroo is open_      |                         |
-Quick jump to a result         | displayed `0-9` / `A-Z` | Press the character shown in the overlay
+Quick jump to a result         | displayed `0-9` / `a-z` / `A-Z` | Press the character shown in the overlay; Shift switches to uppercase shortcuts
 Search by text                 | `type` or `/`           | `/` focuses the search box if list navigation has focus
 Move selection                 | `Tab`, `Shift + Tab`, `↑`, `↓` | Navigate the current result list
 Open selected window           | `Enter`                 |
 Close selected window          | `Ctrl + W`              |
 Dismiss Switcheroo             | `Esc`                   |
+
+_Options_                     |                         |
+Resize popup                  | drag edges              | Size is remembered across activations
+Multi-column layout            | checkbox                | Side-by-side columns when many windows are open
 
 
 History

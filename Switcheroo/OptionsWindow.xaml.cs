@@ -81,6 +81,7 @@ namespace Switcheroo
             AutoSwitch.IsEnabled = _config.AltTabHook;
             AzShortcutsCheckBox.IsChecked = _config.AzShortcutsEnabled;
             OpenUsageHintsByDefaultCheckBox.IsChecked = _config.OpenUsageHintsByDefault;
+            MultiColumnCheckBox.IsChecked = _config.MultiColumnEnabled;
             PreviousAppCheckBox.IsChecked = _config.PreviousAppEnabled;
             PreviousAppPreview.Text = _previousAppViewModel.ToString();
             PreviousAppPreview.IsEnabled = _config.PreviousAppEnabled;
@@ -134,6 +135,7 @@ namespace Switcheroo
             _config.RunAsAdmin = RunAsAdministrator.IsChecked.GetValueOrDefault();
             _config.RunOnStartup = RunOnStartup.IsChecked.GetValueOrDefault();
             _config.OpenUsageHintsByDefault = OpenUsageHintsByDefaultCheckBox.IsChecked.GetValueOrDefault();
+            _config.MultiColumnEnabled = MultiColumnCheckBox.IsChecked.GetValueOrDefault();
             new AutoStart { IsEnabled = _config.RunOnStartup };
             ConfigManager.Save(_config);
 

@@ -54,8 +54,11 @@ namespace Switcheroo
         public bool EnableHotKey { get; set; } = true;
         public bool RunOnStartup { get; set; } = false;
         public bool OpenUsageHintsByDefault { get; set; } = false;
+        public int WindowWidth { get; set; } = 0;
+        public int WindowHeight { get; set; } = 0;
+        public bool MultiColumnEnabled { get; set; } = false;
 
-        // 0-9 / A-Z overlay shortcuts
+        // 0-9 / a-z / A-Z overlay shortcuts
         public bool AzShortcutsEnabled { get; set; } = true;
 
         public static string ConfigDirectory
@@ -239,8 +242,11 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"EnableHotKey\": {0},", Bool(cfg.EnableHotKey)));
             sb.AppendLine(string.Format("  \"RunOnStartup\": {0},", Bool(cfg.RunOnStartup)));
             sb.AppendLine(string.Format("  \"OpenUsageHintsByDefault\": {0},", Bool(cfg.OpenUsageHintsByDefault)));
+            sb.AppendLine(string.Format("  \"WindowWidth\": {0},", cfg.WindowWidth));
+            sb.AppendLine(string.Format("  \"WindowHeight\": {0},", cfg.WindowHeight));
+            sb.AppendLine(string.Format("  \"MultiColumnEnabled\": {0},", Bool(cfg.MultiColumnEnabled)));
             sb.AppendLine();
-            sb.AppendLine("  // Show 0-9 / A-Z shortcuts in the overlay");
+            sb.AppendLine("  // Show 0-9 / a-z / A-Z shortcuts in the overlay");
             sb.AppendLine(string.Format("  \"AzShortcutsEnabled\": {0}", Bool(cfg.AzShortcutsEnabled)));
             sb.AppendLine("}");
             return sb.ToString();

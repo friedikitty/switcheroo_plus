@@ -74,14 +74,12 @@ namespace Switcheroo
 
             _config = ConfigManager.Load();
 
+            SizeChanged += MainWindow_SizeChanged;
+
             SetUpKeyBindings();
-
             SetUpNotifyIcon();
-
             SetUpHotKey();
-
             SetUpPreviousAppHotKey();
-
             SetUpAltTabHook();
 
             CheckForUpdates();
@@ -120,10 +118,11 @@ namespace Switcheroo
                     return;
                 }
 
-                // A-Z direct switch (index 10-35)
+                // a-z / A-Z direct switch (index 10-61)
                 if (args.Key >= Key.A && args.Key <= Key.Z)
                 {
-                    int idx = 10 + (args.Key - Key.A);
+                    bool isUpper = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                    int idx = isUpper ? (10 + 26 + (args.Key - Key.A)) : (10 + (args.Key - Key.A));
                     if (idx < _filteredWindowList.Count)
                     {
                         SwitchToWindowByIndex(idx);
@@ -242,12 +241,33 @@ namespace Switcheroo
             if (!_config.PreviousAppEnabled)
                 return;
 
-            if (_previousWindow != null && !_previousWindow.IsClosed)
+            var current = SystemWindow.ForegroundWindow;
+            var self = new WindowInteropHelper(this).Handle;
+
+            // If we already have a tracked previous window and it is still alive, toggle.
+            if (_previousWindow != null && !_previousWindow.IsClosed && _previousWindow.HWnd != current.HWnd)
             {
+                _currentWindow = current;
                 var temp = _currentWindow;
                 _currentWindow = _previousWindow;
                 _previousWindow = temp;
                 SystemWindow.ForegroundWindow = _currentWindow;
+                return;
+            }
+
+            // Otherwise walk the Z-order to find the previous real window.
+            var prevHwnd = WinApi.GetWindow(current.HWnd, WinApi.GetWindowCmd.GW_HWNDPREV);
+            while (prevHwnd != IntPtr.Zero)
+            {
+                var candidate = new SystemWindow(prevHwnd);
+                if (prevHwnd != self && candidate.Visible && !string.IsNullOrEmpty(candidate.Title))
+                {
+                    _previousWindow = current;
+                    _currentWindow = candidate;
+                    SystemWindow.ForegroundWindow = _currentWindow;
+                    return;
+                }
+                prevHwnd = WinApi.GetWindow(prevHwnd, WinApi.GetWindowCmd.GW_HWNDPREV);
             }
         }
 
@@ -373,20 +393,36 @@ namespace Switcheroo
                 foregroundWindowMovedToBottom = true;
             }
 
-            // Assign shortcut keys: 0-9 first, then A-Z
+            // Assign shortcut keys: 0-9, then a-z, then A-Z (up to 62)
             if (_config.AzShortcutsEnabled)
             {
-                for (int i = 0; i < _unfilteredWindowList.Count && i < 36; i++)
+                for (int i = 0; i < _unfilteredWindowList.Count && i < 62; i++)
                 {
                     if (i < 10)
                         _unfilteredWindowList[i].ShortcutKey = i.ToString();
+                    else if (i < 36)
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('a' + (i - 10))).ToString();
                     else
-                        _unfilteredWindowList[i].ShortcutKey = ((char)('A' + (i - 10))).ToString();
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('A' + (i - 36))).ToString();
                 }
             }
 
             _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
             _windowCloser = new WindowCloser();
+
+            // Toggle multi-column layout when option is enabled
+            if (_config.MultiColumnEnabled)
+            {
+                lb.ItemsPanel = (System.Windows.Controls.ItemsPanelTemplate)FindResource("MultiColumnPanel");
+                ScrollViewer.SetVerticalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Disabled);
+                ScrollViewer.SetHorizontalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Auto);
+            }
+            else
+            {
+                lb.ItemsPanel = (System.Windows.Controls.ItemsPanelTemplate)FindResource("SingleColumnPanel");
+                ScrollViewer.SetVerticalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Auto);
+                ScrollViewer.SetHorizontalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Disabled);
+            }
 
             foreach (var window in _unfilteredWindowList)
             {
@@ -480,9 +516,36 @@ namespace Switcheroo
                 _windowCloser = null;
             }
 
+            if (SizeToContent == SizeToContent.Manual)
+            {
+                _config.WindowWidth = (int)ActualWidth;
+                _config.WindowHeight = (int)ActualHeight;
+                ConfigManager.Save(_config);
+            }
+
             _altTabAutoSwitch = false;
             Opacity = 0;
             Dispatcher.BeginInvoke(new Action(Hide), DispatcherPriority.Input);
+        }
+        private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (Visibility == Visibility.Visible && SizeToContent != SizeToContent.Manual)
+            {
+                SizeToContent = SizeToContent.Manual;
+            }
+        }
+        private void RestoreWindowSize()
+        {
+            if (_config.WindowWidth > 0 && _config.WindowHeight > 0)
+            {
+                Width = _config.WindowWidth;
+                Height = _config.WindowHeight;
+                SizeToContent = SizeToContent.Manual;
+            }
+            else
+            {
+                SizeToContent = SizeToContent.WidthAndHeight;
+            }
         }
 
         #endregion
@@ -628,6 +691,7 @@ namespace Switcheroo
                 tb.IsEnabled = true;
 
                 _foregroundWindow = SystemWindow.ForegroundWindow;
+                RestoreWindowSize();
                 Show();
                 Activate();
                 LoadData(InitialFocus.NextItem);
@@ -680,6 +744,7 @@ namespace Switcheroo
                     tb.Text = "Press Alt + S to search";
                 }
 
+                RestoreWindowSize();
                 Opacity = 1;
             }
             else
