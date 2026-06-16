@@ -1,9 +1,9 @@
-﻿/*
+/*
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
  * Copyright 2014 Regin Larsen
- * 
+ *
  * Switcheroo is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -13,15 +13,16 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 using System;
+using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Windows;
 
 namespace Switcheroo
 {
@@ -38,13 +39,50 @@ namespace Switcheroo
             {
                 var appLink = GetAppLinkPath();
 
-                if (value)
+                try
                 {
-                    CreateShortcut(appLink);
+                    if (value)
+                    {
+                        CreateShortcut(appLink);
+                        MessageBox.Show(
+                            "Switcheroo will start with Windows. A shortcut was placed in shell:startup.",
+                            "Run on Startup Enabled",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    }
+                    else if (IsEnabled)
+                    {
+                        DeleteShortcut(appLink);
+                        MessageBox.Show(
+                            "Switcheroo will no longer start with Windows. The shortcut in shell:startup was removed.",
+                            "Run on Startup Disabled",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    }
                 }
-                else if (IsEnabled)
+                catch (COMException ex)
                 {
-                    DeleteShortcut(appLink);
+                    MessageBox.Show(
+                        "Failed to update startup shortcut: " + ex.Message,
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    MessageBox.Show(
+                        "Permission denied while updating startup shortcut: " + ex.Message,
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        "An error occurred while updating startup shortcut: " + ex.Message,
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
                 }
             }
         }
@@ -72,48 +110,32 @@ namespace Switcheroo
 
         private static void DeleteShortcut(string appLink)
         {
-            try
-            {
-                File.Delete(appLink);
-            }
-            catch
-            {
-                throw new AutoStartException(
-                    "It was not possible to delete the shortcut to Switcheroo in the startup folder");
-            }
+            File.Delete(appLink);
         }
 
         private static void CreateShortcut(string appLink)
         {
+            var exeLocation = Process.GetCurrentProcess().MainModule.FileName;
+
+            //Windows Script Host Shell Object
+            var t = Type.GetTypeFromCLSID(new Guid("72C24DD5-D70A-438B-8A42-98424B88AFB8"));
+            dynamic shell = Activator.CreateInstance(t);
             try
             {
-                var exeLocation = Assembly.GetEntryAssembly().Location;
-
-                //Windows Script Host Shell Object
-                var t = Type.GetTypeFromCLSID(new Guid("72C24DD5-D70A-438B-8A42-98424B88AFB8"));
-                dynamic shell = Activator.CreateInstance(t);
+                var lnk = shell.CreateShortcut(appLink);
                 try
                 {
-                    var lnk = shell.CreateShortcut(appLink);
-                    try
-                    {
-                        lnk.TargetPath = exeLocation;
-                        lnk.Save();
-                    }
-                    finally
-                    {
-                        Marshal.FinalReleaseComObject(lnk);
-                    }
+                    lnk.TargetPath = exeLocation;
+                    lnk.Save();
                 }
                 finally
                 {
-                    Marshal.FinalReleaseComObject(shell);
+                    Marshal.FinalReleaseComObject(lnk);
                 }
             }
-            catch
+            finally
             {
-                throw new AutoStartException(
-                    "It was not possible to create a shortcut to Switcheroo in the startup folder");
+                Marshal.FinalReleaseComObject(shell);
             }
         }
     }

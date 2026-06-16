@@ -51,6 +51,7 @@ namespace Switcheroo
         private NotifyIcon _notifyIcon;
         private HotKey _hotkey;
         private HotKey _previousAppHotkey;
+        private PreviousAppHook _previousAppHook;
 
         public static readonly RoutedUICommand CloseWindowCommand = new RoutedUICommand();
         public static readonly RoutedUICommand SwitchToWindowCommand = new RoutedUICommand();
@@ -232,7 +233,49 @@ namespace Switcheroo
             }
             catch (HotkeyAlreadyInUseException)
             {
-                // Silently ignore if the previous-app hotkey is already in use
+                // If the hotkey uses CapsLock as modifier, fall back to the low-level hook
+                if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
+                {
+                    SetUpPreviousAppLowLevelHook();
+                }
+            }
+            catch (Exception)
+            {
+                // RegisterHotKey failed — try low-level hook if CapsLock-based
+                if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
+                {
+                    SetUpPreviousAppLowLevelHook();
+                }
+            }
+        }
+
+        private bool IsCapsLockPreviousApp()
+        {
+            // CapsLock is VK_CAPITAL = 0x14 = 20
+            // Check if the configured previous-app hotkey involves CapsLock
+            // Either as the key itself (PreviousAppHotKey == VK_CAPITAL)
+            // or the combination is Tab with no standard modifier (suggesting CapsLock+Tab intent)
+            return _config.PreviousAppHotKey == 0x14 ||
+                   (_config.PreviousAppHotKey == (int)System.Windows.Forms.Keys.Tab &&
+                    !_config.PreviousAppAlt && !_config.PreviousAppCtrl &&
+                    !_config.PreviousAppShift && !_config.PreviousAppWindowsKey);
+        }
+
+        private void SetUpPreviousAppLowLevelHook()
+        {
+            DisposePreviousAppHook();
+            _previousAppHook = new PreviousAppHook();
+            _previousAppHook.Pressed += previousAppHotkey_Pressed;
+            _previousAppHook.StartHook();
+        }
+
+        private void DisposePreviousAppHook()
+        {
+            if (_previousAppHook != null)
+            {
+                _previousAppHook.Pressed -= previousAppHotkey_Pressed;
+                _previousAppHook.Dispose();
+                _previousAppHook = null;
             }
         }
 
@@ -609,6 +652,7 @@ namespace Switcheroo
             _hotkey.Dispose();
             if (_previousAppHotkey != null)
                 _previousAppHotkey.Dispose();
+            DisposePreviousAppHook();
             Application.Current.Shutdown();
         }
 
@@ -621,8 +665,20 @@ namespace Switcheroo
             {
                 _previousAppHotkey.LoadPreviousAppSettings();
                 try { _previousAppHotkey.Enabled = _config.PreviousAppEnabled; }
-                catch (HotkeyAlreadyInUseException) { }
+                catch (HotkeyAlreadyInUseException)
+                {
+                    if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
+                        SetUpPreviousAppLowLevelHook();
+                }
+                catch (Exception)
+                {
+                    if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
+                        SetUpPreviousAppLowLevelHook();
+                }
             }
+            // Dispose low-level hook if previous-app is disabled or no longer CapsLock-based
+            if (!_config.PreviousAppEnabled || !IsCapsLockPreviousApp())
+                DisposePreviousAppHook();
             SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
         }
 
