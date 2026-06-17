@@ -19,13 +19,22 @@
  */
 
 using System;
-using System.Windows;
 using System.Windows.Forms;
-using System.Windows.Threading;
 using ManagedWinapi.Hooks;
 
 namespace Switcheroo
 {
+    /// <summary>
+    /// Low-level keyboard hook that turns CapsLock+Tab into a previous-app toggle.
+    /// </summary>
+    /// <remarks>
+    /// CapsLock is used as a modifier: its key events are swallowed so the CapsLock
+    /// LED/state does not toggle, and a press of Tab while CapsLock is held fires
+    /// the <see cref="Pressed"/> event.
+    ///
+    /// Note: if CapsLock has been remapped or disabled via a registry Scancode Map,
+    /// the low-level hook will never see it and this shortcut cannot work.
+    /// </remarks>
     public class PreviousAppHook : IDisposable
     {
         public event EventHandler Pressed;
@@ -39,9 +48,6 @@ namespace Switcheroo
 
         private readonly LowLevelKeyboardHook _hook;
         private bool _capsLockDown;
-        private bool _capsLockDetected;
-        private DispatcherTimer _detectionTimer;
-        private bool _detectionComplete;
 
         public PreviousAppHook()
         {
@@ -52,36 +58,7 @@ namespace Switcheroo
         public void StartHook()
         {
             _capsLockDown = false;
-            _capsLockDetected = false;
-            _detectionComplete = false;
             _hook.StartHook();
-
-            // Start a detection timer: if CapsLock is never observed within 5 seconds
-            // of the first keyboard event, assume it's stripped by Scancode Map.
-            _detectionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-            _detectionTimer.Tick += OnDetectionTimeout;
-            _detectionTimer.Start();
-        }
-
-        private void OnDetectionTimeout(object sender, EventArgs e)
-        {
-            _detectionTimer.Stop();
-            _detectionTimer = null;
-            _detectionComplete = true;
-
-            if (!_capsLockDetected)
-            {
-                // CapsLock key was never observed — likely stripped by Scancode Map
-                System.Windows.MessageBox.Show(
-                    "CapsLock key events are not visible to Switcheroo. This usually happens when CapsLock " +
-                    "is disabled via a registry Scancode Map.\n\n" +
-                    "The CapsLock+Tab previous-app shortcut cannot work in this configuration. " +
-                    "Please choose a different shortcut key in Options.",
-                    "CapsLock Not Detected",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                Dispose();
-            }
         }
 
         private void OnMessageIntercepted(LowLevelMessage lowLevelMessage, ref bool handled)
@@ -94,28 +71,24 @@ namespace Switcheroo
             var vkCode = keyboardMessage.VirtualKeyCode;
             var scanCode = keyboardMessage.ScanCode;
 
-            // Track CapsLock key state by scancode
+            // Recognize CapsLock by scan code or virtual key code, then swallow it
+            // so it does not toggle the keyboard LEDs/state.
             if (scanCode == CapsLockScanCode || vkCode == VK_CAPITAL)
             {
-                if (!_capsLockDetected)
-                    _capsLockDetected = true;
-
                 if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
                 {
                     _capsLockDown = true;
-                    // Suppress the CapsLock keydown to prevent toggling CapsLock state
                     handled = true;
                 }
                 else if (msg == WM_KEYUP || msg == WM_SYSKEYUP)
                 {
                     _capsLockDown = false;
-                    // Suppress the CapsLock keyup as well
                     handled = true;
                 }
                 return;
             }
 
-            // If CapsLock is held and Tab is pressed, fire the event
+            // CapsLock + Tab triggers the previous-app switch.
             if (_capsLockDown && vkCode == (int)Keys.Tab &&
                 (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN))
             {
@@ -133,11 +106,6 @@ namespace Switcheroo
 
         public void Dispose()
         {
-            if (_detectionTimer != null)
-            {
-                _detectionTimer.Stop();
-                _detectionTimer = null;
-            }
             if (_hook != null)
                 _hook.Dispose();
         }

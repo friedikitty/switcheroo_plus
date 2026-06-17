@@ -70,7 +70,8 @@ namespace Switcheroo
                 Alt = _config.PreviousAppAlt,
                 Ctrl = _config.PreviousAppCtrl,
                 Windows = _config.PreviousAppWindowsKey,
-                Shift = _config.PreviousAppShift
+                Shift = _config.PreviousAppShift,
+                CapsLock = _config.PreviousAppCapsLock
             };
 
             HotKeyCheckBox.IsChecked = _config.EnableHotKey;
@@ -131,6 +132,7 @@ namespace Switcheroo
             _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;
             _config.PreviousAppShift = _previousAppViewModel.Shift;
             _config.PreviousAppWindowsKey = _previousAppViewModel.Windows;
+            _config.PreviousAppCapsLock = _previousAppViewModel.CapsLock;
             _config.PreviousAppHotKey = KeyInterop.VirtualKeyFromKey(_previousAppViewModel.KeyCode);
             _config.RunAsAdmin = RunAsAdministrator.IsChecked.GetValueOrDefault();
             _config.RunOnStartup = RunOnStartup.IsChecked.GetValueOrDefault();
@@ -172,7 +174,8 @@ namespace Switcheroo
             _previousAppViewModel = BuildViewModelFromKeyEvent(key);
             var previewText = _previousAppViewModel.ToString();
 
-            if (previewText == "Tab")
+            // Plain Tab moves focus; CapsLock+Tab is a valid shortcut.
+            if (previewText == "Tab" && !_previousAppViewModel.CapsLock)
             {
                 ((UIElement) sender).MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
                 return;
@@ -199,6 +202,10 @@ namespace Switcheroo
             var winLKey = new KeyboardKey(Keys.LWin);
             var winRKey = new KeyboardKey(Keys.RWin);
             vm.Windows = (winLKey.State & 0x8000) == 0x8000 || (winRKey.State & 0x8000) == 0x8000;
+
+            var capsLockKey = new KeyboardKey(Keys.Capital);
+            vm.CapsLock = (capsLockKey.State & 0x8000) == 0x8000;
+
             vm.KeyCode = key;
             return vm;
         }
@@ -210,10 +217,16 @@ namespace Switcheroo
             public bool Alt { get; set; }
             public bool Ctrl { get; set; }
             public bool Windows { get; set; }
+            public bool CapsLock { get; set; }
 
             public override string ToString()
             {
                 var shortcutText = new StringBuilder();
+
+                if (CapsLock)
+                {
+                    shortcutText.Append("CapsLock + ");
+                }
 
                 if (Ctrl)
                 {

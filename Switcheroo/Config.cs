@@ -45,6 +45,7 @@ namespace Switcheroo
         public bool PreviousAppCtrl { get; set; } = false;
         public bool PreviousAppShift { get; set; } = false;
         public bool PreviousAppWindowsKey { get; set; } = false;
+        public bool PreviousAppCapsLock { get; set; } = false;
         public int PreviousAppHotKey { get; set; } = 9; // Tab
 
         // Behaviour toggles
@@ -233,6 +234,7 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"PreviousAppCtrl\": {0},", Bool(cfg.PreviousAppCtrl)));
             sb.AppendLine(string.Format("  \"PreviousAppShift\": {0},", Bool(cfg.PreviousAppShift)));
             sb.AppendLine(string.Format("  \"PreviousAppWindowsKey\": {0},", Bool(cfg.PreviousAppWindowsKey)));
+            sb.AppendLine(string.Format("  \"PreviousAppCapsLock\": {0},", Bool(cfg.PreviousAppCapsLock)));
             sb.AppendLine(string.Format("  \"PreviousAppHotKey\": {0},", cfg.PreviousAppHotKey));
             sb.AppendLine();
             sb.AppendLine("  // Behaviour toggles");

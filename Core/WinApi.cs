@@ -25,7 +25,7 @@ using System.Windows.Forms;
 
 namespace Switcheroo.Core
 {
-    internal static class WinApi
+    public static class WinApi
     {
         public delegate bool EnumWindowsProc(IntPtr hWnd, int lParam);
 

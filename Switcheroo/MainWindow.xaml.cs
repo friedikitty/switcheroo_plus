@@ -252,10 +252,8 @@ namespace Switcheroo
         private bool IsCapsLockPreviousApp()
         {
             // CapsLock is VK_CAPITAL = 0x14 = 20
-            // Check if the configured previous-app hotkey involves CapsLock
-            // Either as the key itself (PreviousAppHotKey == VK_CAPITAL)
-            // or the combination is Tab with no standard modifier (suggesting CapsLock+Tab intent)
-            return _config.PreviousAppHotKey == 0x14 ||
+            return _config.PreviousAppCapsLock ||
+                   _config.PreviousAppHotKey == 0x14 ||
                    (_config.PreviousAppHotKey == (int)System.Windows.Forms.Keys.Tab &&
                     !_config.PreviousAppAlt && !_config.PreviousAppCtrl &&
                     !_config.PreviousAppShift && !_config.PreviousAppWindowsKey);
