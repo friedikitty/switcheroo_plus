@@ -53,7 +53,6 @@ namespace Switcheroo
         private ObservableCollection<AppWindowViewModel> _filteredWindowList;
         private NotifyIcon _notifyIcon;
         private HotKey _hotkey;
-        private HotKey _previousAppHotkey;
         private PreviousAppHook _previousAppHook;
 
         public static readonly RoutedUICommand CloseWindowCommand = new RoutedUICommand();
@@ -242,46 +241,27 @@ namespace Switcheroo
 
         private void SetUpPreviousAppHotKey()
         {
-            _previousAppHotkey = new HotKey();
-            _previousAppHotkey.LoadPreviousAppSettings();
-            _previousAppHotkey.HotkeyPressed += previousAppHotkey_Pressed;
-            try
-            {
-                if (!_autoMode)
-                    _previousAppHotkey.Enabled = _config.PreviousAppEnabled;
-            }
-            catch (HotkeyAlreadyInUseException)
-            {
-                // If the hotkey uses CapsLock as modifier, fall back to the low-level hook
-                if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
-                {
-                    SetUpPreviousAppLowLevelHook();
-                }
-            }
-            catch (Exception)
-            {
-                // RegisterHotKey failed — try low-level hook if CapsLock-based
-                if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
-                {
-                    SetUpPreviousAppLowLevelHook();
-                }
-            }
-        }
+            // Previous-app is driven by a low-level keyboard hook (PreviousAppHook)
+            // instead of RegisterHotKey so that combos Windows owns (Alt+Tab) and
+            // combos RegisterHotKey cannot express (CapsLock as a modifier) all
+            // work. Skip in --auto mode and when disabled: the automation API calls
+            // TriggerPreviousApp() directly without needing a global hook.
+            if (_autoMode || !_config.PreviousAppEnabled)
+                return;
 
-        private bool IsCapsLockPreviousApp()
-        {
-            // CapsLock is VK_CAPITAL = 0x14 = 20
-            return _config.PreviousAppCapsLock ||
-                   _config.PreviousAppHotKey == 0x14 ||
-                   (_config.PreviousAppHotKey == (int)System.Windows.Forms.Keys.Tab &&
-                    !_config.PreviousAppAlt && !_config.PreviousAppCtrl &&
-                    !_config.PreviousAppShift && !_config.PreviousAppWindowsKey);
+            SetUpPreviousAppLowLevelHook();
         }
 
         private void SetUpPreviousAppLowLevelHook()
         {
             DisposePreviousAppHook();
-            _previousAppHook = new PreviousAppHook();
+            _previousAppHook = new PreviousAppHook(
+                _config.PreviousAppAlt,
+                _config.PreviousAppCtrl,
+                _config.PreviousAppShift,
+                _config.PreviousAppWindowsKey,
+                _config.PreviousAppCapsLock,
+                _config.PreviousAppHotKey);
             _previousAppHook.Pressed += previousAppHotkey_Pressed;
             _previousAppHook.StartHook();
         }
@@ -314,8 +294,11 @@ namespace Switcheroo
                 return;
             }
 
-            // Otherwise walk the Z-order to find the previous real window.
-            var prevHwnd = WinApi.GetWindow(current.HWnd, WinApi.GetWindowCmd.GW_HWNDPREV);
+            // Otherwise walk the Z-order to find the previous real window. The
+            // foreground window is at the TOP of the Z order, so the previously-used
+            // window is the next one DOWN — that is GW_HWNDNEXT (GW_HWNDPREV walks
+            // upward and finds nothing below the topmost window).
+            var prevHwnd = WinApi.GetWindow(current.HWnd, WinApi.GetWindowCmd.GW_HWNDNEXT);
             while (prevHwnd != IntPtr.Zero)
             {
                 var candidate = new AppWindow(prevHwnd);
@@ -326,7 +309,7 @@ namespace Switcheroo
                     _currentWindow.SwitchTo();
                     return;
                 }
-                prevHwnd = WinApi.GetWindow(prevHwnd, WinApi.GetWindowCmd.GW_HWNDPREV);
+                prevHwnd = WinApi.GetWindow(prevHwnd, WinApi.GetWindowCmd.GW_HWNDNEXT);
             }
         }
 
@@ -671,8 +654,6 @@ namespace Switcheroo
                 _automationServer = null;
             }
             _hotkey.Dispose();
-            if (_previousAppHotkey != null)
-                _previousAppHotkey.Dispose();
             DisposePreviousAppHook();
             Application.Current.Shutdown();
         }
@@ -701,29 +682,11 @@ namespace Switcheroo
                 }
             }
 
-            // Refresh previous-app hotkey state (OptionsWindow doesn't manage this object)
-            if (_previousAppHotkey != null)
-            {
-                try
-                {
-                    _previousAppHotkey.LoadPreviousAppSettings();
-                    if (!_autoMode)
-                        _previousAppHotkey.Enabled = _config.PreviousAppEnabled;
-                }
-                catch (HotkeyAlreadyInUseException)
-                {
-                    if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
-                        SetUpPreviousAppLowLevelHook();
-                }
-                catch (Exception)
-                {
-                    if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
-                        SetUpPreviousAppLowLevelHook();
-                }
-            }
-            // Dispose low-level hook if previous-app is disabled or no longer CapsLock-based
-            if (!_config.PreviousAppEnabled || !IsCapsLockPreviousApp())
-                DisposePreviousAppHook();
+            // Refresh previous-app low-level hook to match the (possibly changed) combo.
+            DisposePreviousAppHook();
+            if (!_autoMode && _config.PreviousAppEnabled)
+                SetUpPreviousAppLowLevelHook();
+
             SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
         }
 

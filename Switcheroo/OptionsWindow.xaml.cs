@@ -113,8 +113,12 @@ namespace Switcheroo
                     _hotkey.KeyCode = (Keys) KeyInterop.VirtualKeyFromKey(_hotkeyViewModel.KeyCode);
                     _hotkey.Enabled = true;
                 }
-
-                _hotkey.SaveSettings();
+                // NOTE: do not call _hotkey.SaveSettings() here. It reloaded the
+                // config from disk, wrote the Activate* fields, and saved; the very
+                // next ConfigManager.Save(_config) below then overwrote the file with
+                // the stale in-memory _config, reverting the activation hotkey to
+                // Alt+Space on the next launch. The Activate* fields are persisted
+                // together with the rest of _config below.
             }
             catch (HotkeyAlreadyInUseException)
             {
@@ -125,6 +129,13 @@ namespace Switcheroo
             }
 
             _config.EnableHotKey = HotKeyCheckBox.IsChecked.GetValueOrDefault();
+            // Persist the activation hotkey from the editor view model into the
+            // JSONC config (the single source of truth used at startup).
+            _config.ActivateAlt = _hotkeyViewModel.Alt;
+            _config.ActivateCtrl = _hotkeyViewModel.Ctrl;
+            _config.ActivateShift = _hotkeyViewModel.Shift;
+            _config.ActivateWindowsKey = _hotkeyViewModel.Windows;
+            _config.ActivateHotKey = KeyInterop.VirtualKeyFromKey(_hotkeyViewModel.KeyCode);
             _config.AltTabHook = AltTabCheckBox.IsChecked.GetValueOrDefault();
             _config.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
             _config.AzShortcutsEnabled = AzShortcutsCheckBox.IsChecked.GetValueOrDefault();
