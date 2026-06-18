@@ -18,6 +18,7 @@
  * along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+using System;
 using System.Text;
 using System.Windows;
 using System.Windows.Forms;
@@ -138,7 +139,18 @@ namespace Switcheroo
             _config.RunOnStartup = RunOnStartup.IsChecked.GetValueOrDefault();
             _config.OpenUsageHintsByDefault = OpenUsageHintsByDefaultCheckBox.IsChecked.GetValueOrDefault();
             _config.MultiColumnEnabled = MultiColumnCheckBox.IsChecked.GetValueOrDefault();
-            new AutoStart { IsEnabled = _config.RunOnStartup };
+            try
+            {
+                var autoStart = new AutoStart { IsEnabled = _config.RunOnStartup };
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Failed to update startup shortcut: " + ex.Message,
+                    "Run on Startup Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
             ConfigManager.Save(_config);
 
             if (closeOptionsWindow)

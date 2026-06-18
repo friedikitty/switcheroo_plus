@@ -62,7 +62,10 @@ namespace Switcheroo
         // 0-9 / a-z / A-Z overlay shortcuts
         public bool AzShortcutsEnabled { get; set; } = true;
 
-        public static string ConfigDirectory
+        /// <summary>
+        /// Legacy config directory used by older builds. Kept for one-time migration.
+        /// </summary>
+        private static string LegacyConfigDirectory
         {
             get
             {
@@ -72,9 +75,48 @@ namespace Switcheroo
             }
         }
 
+        private static string LegacyConfigPath
+        {
+            get { return Path.Combine(LegacyConfigDirectory, "config.jsonc"); }
+        }
+
+        public static string ConfigDirectory
+        {
+            get
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".config",
+                    ".switcheroo_plus");
+            }
+        }
+
         public static string ConfigPath
         {
             get { return Path.Combine(ConfigDirectory, "config.jsonc"); }
+        }
+
+        /// <summary>
+        /// Migrates a legacy config file to the new location if present.
+        /// </summary>
+        public static void MigrateLegacyConfig()
+        {
+            try
+            {
+                if (!File.Exists(LegacyConfigPath))
+                    return;
+                if (File.Exists(ConfigPath))
+                    return;
+
+                if (!Directory.Exists(ConfigDirectory))
+                    Directory.CreateDirectory(ConfigDirectory);
+
+                File.Copy(LegacyConfigPath, ConfigPath);
+            }
+            catch
+            {
+                // Migration is best-effort; do not crash on failure.
+            }
         }
     }
 
@@ -85,6 +127,8 @@ namespace Switcheroo
     {
         public static SwitcherooConfig Load()
         {
+            SwitcherooConfig.MigrateLegacyConfig();
+
             var path = SwitcherooConfig.ConfigPath;
             if (!File.Exists(path))
                 return new SwitcherooConfig();

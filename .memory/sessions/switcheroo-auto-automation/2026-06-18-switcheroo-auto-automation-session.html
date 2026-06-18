@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="ai-read-order" content="appendix-first">
+  <meta name="ai-primary-section" content="#appendix">
+  <!-- AI-AGENT: Read #appendix (verbatim digest) first. Illustrated sections are optional skim. -->
+  <title>Switcheroon+ — auto mode, config path, and automation pipe</title>
+  <style>
+    :root {
+      --ivory: #faf9f5;
+      --slate: #141413;
+      --clay: #d97757;
+      --oat: #e3dacc;
+      --olive: #788c5d;
+      --rust: #b04a3f;
+      --gray-150: #f0eee6;
+      --gray-300: #d1cfc5;
+      --gray-500: #87867f;
+      --gray-700: #3d3d3a;
+      --white: #ffffff;
+      --serif: ui-serif, Georgia, "Times New Roman", serif;
+      --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 2rem 1.5rem;
+      background: var(--ivory);
+      color: var(--gray-700);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    main { max-width: 880px; margin: 0 auto; }
+    h1 { color: var(--slate); font-family: var(--serif); font-weight: 550; font-size: clamp(1.7rem, 4vw, 2.4rem); margin: 0 0 0.25rem; }
+    .meta { font: 0.85rem var(--mono); color: var(--gray-500); margin-bottom: 1.25rem; }
+    h2 { color: var(--slate); font-family: var(--serif); font-weight: 550; font-size: 1.45rem; margin: 2rem 0 0.75rem; border-bottom: 1px solid var(--gray-300); padding-bottom: 0.35rem; }
+    h3 { color: var(--slate); font-family: var(--serif); font-weight: 550; font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+    p { margin: 0.6rem 0; }
+    a { color: var(--clay); }
+    code { background: var(--gray-150); padding: 0.1rem 0.35rem; border-radius: 4px; font-family: var(--mono); font-size: 0.88em; }
+    pre { background: var(--white); border: 1px solid var(--gray-300); border-radius: 6px; padding: 0.85rem 1rem; overflow-x: auto; font-family: var(--mono); font-size: 0.85rem; line-height: 1.55; }
+    pre code { background: transparent; padding: 0; }
+    ul { padding-left: 1.3rem; }
+    li { margin: 0.35rem 0; }
+
+    .ai-read-order {
+      font: 0.78rem/1.4 var(--mono);
+      color: var(--gray-500);
+      padding: 0.4rem 0;
+      margin: 0 0 0.75rem;
+      border-bottom: 1px solid var(--gray-300);
+    }
+    .ai-read-order a { color: var(--clay); }
+    .ai-read-order strong { color: var(--slate); font-weight: 600; }
+
+    .tldr {
+      background: var(--slate);
+      color: var(--ivory);
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin: 0 0 1.75rem;
+    }
+    .tldr h2 { color: var(--ivory); border: none; margin: 0 0 0.5rem; padding: 0; font-size: 1.15rem; }
+    .tldr p { margin: 0.4rem 0; }
+    .tldr code { background: rgba(255,255,255,0.12); color: var(--ivory); }
+    .status-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.75rem; }
+    .chip { font: 0.75rem var(--mono); padding: 0.2rem 0.55rem; border-radius: 4px; background: var(--olive); color: var(--white); }
+
+    table { width: 100%; border-collapse: collapse; background: var(--white); border: 1.5px solid var(--gray-300); margin: 1rem 0; font-size: 0.92rem; }
+    th, td { border: 1px solid var(--gray-300); padding: 0.55rem 0.7rem; text-align: left; vertical-align: top; }
+    th { background: var(--gray-150); font-weight: 600; color: var(--slate); }
+    tr:nth-child(even) td { background: #fbfaf8; }
+
+    .diagram { background: var(--white); border: 1px solid var(--gray-300); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    .diagram pre { border: none; background: transparent; padding: 0; margin: 0; }
+    .diagram pre .callout { background: var(--oat); color: var(--slate); padding: 0 3px; border-radius: 3px; font-weight: 700; }
+
+    details { background: var(--white); border: 1px solid var(--gray-300); border-radius: 6px; padding: 0.65rem 0.9rem; margin: 0.75rem 0; }
+    summary { cursor: pointer; font-weight: 600; color: var(--slate); }
+    details[open] summary { margin-bottom: 0.5rem; }
+
+    .prompt-label { font: 0.75rem var(--mono); color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.25rem; }
+
+    .appendix { border-top: 3px solid var(--clay); margin-top: 2.5rem; padding-top: 1rem; }
+    .appendix h2 { border: none; }
+    .appendix pre { max-height: 70vh; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <aside class="ai-read-order" aria-label="Read order for AI agents" data-reader="ai">
+    <strong>For AI:</strong> Read <a href="#appendix">Appendix — understanding digest</a> first; skip full-page scan unless you need tables or diagrams.
+  </aside>
+
+  <main>
+    <h1>Switcheroon+ — auto mode, config path, and automation pipe</h1>
+    <div class="meta">2026-06-18 · session slug: <code>switcheroo-auto-automation</code></div>
+
+    <section class="tldr" id="tldr">
+      <h2>TL;DR</h2>
+      <p>Fixed Switcheroon+ build, config persistence, and previous-app switching; added a <code>--auto</code> CLI mode and a named-pipe automation API so the GUI can be driven by scripts instead of manual clicks. Build, 36 unit tests, and 7 pipe commands all pass.</p>
+      <div class="status-chips">
+        <span class="chip">build fixed</span>
+        <span class="chip">tests passing</span>
+        <span class="chip">automation verified</span>
+        <span class="chip">config migrated</span>
+      </div>
+    </section>
+
+    <section id="user-prompts">
+      <h2>User prompts</h2>
+      <details open>
+        <summary>Prompt 1 (first prompt) — finish broken build/test/run and prototype CapsLock hook</summary>
+        <pre><code>g:\github\switcheroo_plus.plan\switcheroo-plus-fixes-design.md check this, and finish the requirement
+
+Some agent has write some code, but it cant work at all. you have to make sure the build.bat is OK, test.bat is OK; run.bat can run, you can see the GUI without crash then handle it to manual test.
+
+And the requirement to hook the capslock, you need to write code prviouse to test if it's plausible, you need to search for the web for solutions.</code></pre>
+      </details>
+
+      <details>
+        <summary>Prompt 2-4 — tray icon, no main window, confirm run is OK</summary>
+        <pre><code>run will generate an app icon dock in the task bar. so it may not have a window, you may need to find a way to communicate with it. I confirm run is OK , go on other tasks</code></pre>
+      </details>
+
+      <details>
+        <summary>Prompt 5 — commit, fix persistence / previous-app / remote control</summary>
+        <pre><code>commit the previouse changes as a git commmit. then there are problems to fix:
+
+1. Active Switrtcheroo with this shortcut is not saved, everytime I open the window though the tray icon, it become back Alt+ Space
+
+2. Switch back to previous app with this shortcut never work
+
+3. I want you to add some way in the gui, maybe let it serve as a mcp to let you remote control the features so that you can do autotest on the app. so that I dont need to manually test once and again</code></pre>
+      </details>
+
+      <details>
+        <summary>Prompt 6 — auto test it, move config to ~/.config/.switcheroo_plus/config.jsonc</summary>
+        <pre><code>The program can run, but it crash instantly after it change the hotkey and save.
+
+I want you to :
+
+1. finish the todo, you need to help me auto test it.
+2. The hotkeys and settings are not save properly, I want you to save to ~/.config/.switcheroo_plus/config.jsonc and also read that when launch. otherwise everytime I start, it keep use the old hotkey.</code></pre>
+      </details>
+
+      <details>
+        <summary>Prompt 7 — add AGENTS.md rule about interactive processes</summary>
+        <pre><code>You cant create a progress without timeout and communication to it. the switcheroo_plus has crash and you dead wait there, write this rule to the root rule. Then continue the progress</code></pre>
+      </details>
+
+      <details>
+        <summary>Prompt 8-9 — add --auto mode, continue as guided</summary>
+        <pre><code>Everytime the app starts, it pops that the shortcut is taken (Alt+Tab), you have to write code to add a param like -auto mode, to suppress the behavior, otherwise nothing can be tested.</code></pre>
+        <pre><code>continue as I guided</code></pre>
+      </details>
+
+      <details>
+        <summary>Prompt 10-11 — save session knowledge, continue</summary>
+        <pre><code>use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge</code></pre>
+        <pre><code>Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.</code></pre>
+      </details>
+    </section>
+
+    <section id="timeline">
+      <h2>Timeline</h2>
+      <table>
+        <thead>
+          <tr><th>Step</th><th>What happened</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1. Build</td><td><code>Core/WinApi.cs</code> was internal; WPF app could not call it.</td><td>Made public; build passes.</td></tr>
+          <tr><td>2. Config crash</td><td>AutoStart shortcut creation threw on save.</td><td>Wrapped in try/catch.</td></tr>
+          <tr><td>3. Hotkey reverts</td><td><code>ReloadConfig</code> did not re-apply hotkey after Options.</td><td>Reload hotkey inside <code>ReloadConfig</code>.</td></tr>
+          <tr><td>4. Previous-app</td><td>Used <code>SwitchToThisWindow</code> on non-AltTab windows.</td><td>Filter with <code>AppWindow.IsAltTabWindow()</code> and call <code>SwitchTo()</code>.</td></tr>
+          <tr><td>5. Config path</td><td>Old path was not stable/reliable.</td><td>Moved to <code>~/.config/.switcheroo_plus/config.jsonc</code> with migration.</td></tr>
+          <tr><td>6. Automation pipe</td><td>Named pipe server + JSON API added.</td><td>7 commands verified.</td></tr>
+          <tr><td>7. --auto mode</td><td>Blocking “hotkey taken” popup blocked tests.</td><td><code>--auto</code> skips hotkey registration and update check.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="architecture">
+      <h2>Architecture</h2>
+      <div class="diagram">
+        <pre>
+User / PowerShell script
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  switcheroo_plus.exe <span class="callout">--auto</span>       │
+│  • skips hotkey/update popups       │
+│  • loads config from ~/.config/…    │
+└──────────────────┬──────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+        ▼                     ▼
+┌───────────────┐   ┌─────────────────────┐
+│  WPF overlay  │   │  named pipe server  │
+│  MainWindow   │◄──│  switcheroo_plus_   │
+│               │   │  automation         │
+└───────┬───────┘   └─────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  Commands: ping, show, setquery,    │
+│  getwindows, hide, getconfig,       │
+│  previousapp                        │
+└─────────────────────────────────────┘
+        </pre>
+      </div>
+    </section>
+
+    <section id="verification">
+      <h2>Verification matrix</h2>
+      <table>
+        <thead>
+          <tr><th>Check</th><th>Command</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Debug build</td><td><code>.\build.bat --config Debug</code></td><td>Success</td></tr>
+          <tr><td>Unit tests</td><td><code>.\test.bat --config Debug</code></td><td>36/36 passed</td></tr>
+          <tr><td>Automation ping</td><td><code>AutomationTests\Run-AutomationTests.ps1</code></td><td>PASS</td></tr>
+          <tr><td>Automation show</td><td>pipe <code>show</code></td><td>PASS</td></tr>
+          <tr><td>Automation setquery</td><td>pipe <code>setquery</code></td><td>PASS</td></tr>
+          <tr><td>Automation getwindows</td><td>pipe <code>getwindows</code></td><td>PASS</td></tr>
+          <tr><td>Automation hide</td><td>pipe <code>hide</code></td><td>PASS</td></tr>
+          <tr><td>Automation getconfig</td><td>pipe <code>getconfig</code></td><td>PASS</td></tr>
+          <tr><td>Automation previousapp</td><td>pipe <code>previousapp</code></td><td>PASS</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="paths">
+      <h2>Key paths and commands</h2>
+      <table>
+        <thead>
+          <tr><th>What</th><th>Path / command</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Repo root</td><td><code>G:\github\switcheroo_plus</code></td></tr>
+          <tr><td>Config file</td><td><code>%USERPROFILE%\.config\.switcheroo_plus\config.jsonc</code></td></tr>
+          <tr><td>Build</td><td><code>.\build.bat --config Debug</code></td></tr>
+          <tr><td>Tests</td><td><code>.\test.bat --config Debug</code></td></tr>
+          <tr><td>Automation harness</td><td><code>.\AutomationTests\Run-AutomationTests.ps1</code></td></tr>
+          <tr><td>Pipe name</td><td><code>switcheroo_plus_automation</code></td></tr>
+          <tr><td>Pipe client EXE</td><td><code>Switcheroo\bin\Debug\switcheroo_plus.exe --auto</code> (server mode)</td></tr>
+          <tr><td>Automation source</td><td><code>Switcheroo\Automation\</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="risks">
+      <h2>Open risks</h2>
+      <ul>
+        <li>CapsLock+Tab was wired and persisted, but not manually exercised on the user's machine because testing focused on the <code>--auto</code> path.</li>
+        <li><code>--auto</code> disables global hotkeys, so automation cannot exercise actual hotkey invocation; it only drives the overlay API.</li>
+        <li>The named-pipe server accepts any local process; fine for local testing but should be documented.</li>
+        <li>Config migration is one-way. Keeping old and new config in sync is not implemented.</li>
+        <li><code>RunOnStartup</code> shortcut creation silently fails under <code>--auto</code>/non-elevated scenarios.</li>
+      </ul>
+    </section>
+
+    <section id="glossary">
+      <h2>Glossary</h2>
+      <details>
+        <summary>Terms</summary>
+        <ul>
+          <li><strong>--auto</strong>: CLI flag that suppresses blocking startup dialogs so automated tests can run.</li>
+          <li><strong>Named pipe</strong>: Windows inter-process communication channel used by the automation server.</li>
+          <li><strong>Dispatcher.Invoke</strong>: WPF mechanism to run code on the UI thread; fixed thread-affinity errors in automation.</li>
+          <li><strong>IsAltTabWindow</strong>: Filter that decides which top-level windows appear in the Alt+Tab list.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section id="appendix" class="appendix ai-understanding-digest" data-reader="ai" aria-label="Verbatim understanding digest for AI">
+      <h2>Appendix — understanding digest (read by AI)</h2>
+      <p>This block is the verbatim Phase-1 Markdown digest for replay; the body above is the simplified illustrated view.</p>
+      <pre><code class="language-markdown"># Understanding digest — switcheroo-auto-automation
+
+## User prompts (verbatim)
+
+### Prompt 1 (first prompt)
+```text
+g:\github\switcheroo_plus.plan\switcheroo-plus-fixes-design.md check this, and finish the requirement
+
+Some agent has write some code, but it cant work at all. you have to make sure the build.bat is OK, test.bat is OK; run.bat can run, you can see the GUI without crash then handle it to manual test.
+
+And the requirement to hook the capslock, you need to write code prviouse to test if it's plausible, you need to search for the web for solutions.
+```
+
+### Prompt 2
+```text
+run will generate an app icon dock in the task bar. so it may not have a window, you may need to find a way to communicate with it
+```
+
+### Prompt 3
+```text
+run will generate an app icon dock in the task bar. so it may not have a window, you may need to find a way to communicate with it. then check
+```
+
+### Prompt 4
+```text
+run will generate an app icon dock in the task bar. so it may not have a window, you may need to find a way to communicate with it. I confirm run is OK , go on other tasks
+```
+
+### Prompt 5
+```text
+commit the previouse changes as a git commmit. then there are problems to fix:
+
+1. Active Switrtcheroo with this shortcut is not saved, everytime I open the window though the tray icon, it become back Alt+ Space
+
+2. Switch back to previous app with this shortcut never work
+
+3. I want you to add some way in the gui, maybe let it serve as a mcp to let you remote control the features so that you can do autotest on the app. so that I dont need to manually test once and again
+```
+
+### Prompt 6
+```text
+The program can run, but it crash instantly after it change the hotkey and save.
+
+I want you to :
+
+1. finish the todo, you need to help me auto test it.
+2. The hotkeys and settings are not save properly, I want you to save to ~/.config/.switcheroo_plus/config.jsonc and also read that when launch. otherwise everytime I start, it keep use the old hotkey.
+```
+
+### Prompt 7
+```text
+You cant create a progress without timeout and communication to it. the switcheroo_plus has crash and you dead wait there, write this rule to the root rule. Then continue the progress
+```
+
+### Prompt 8
+```text
+Everytime the app starts, it pops that the shortcut is taken (Alt+Tab), you have to write code to add a param like -auto mode, to suppress the behavior, otherwise nothing can be tested.
+```
+
+### Prompt 9
+```text
+continue as I guided
+```
+
+### Prompt 10
+```text
+use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge
+```
+
+### Prompt 11
+```text
+Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.
+```
+
+## Trigger
+
+Switcheroon+ was in a broken state: build scripts failed, the GUI crashed or produced blocking dialogs, and CapsLock+Tab integration plus a remote-control/automation interface were requested so manual testing could be replaced by automated tests.
+
+## Evidence
+
+- Repo root: `G:\github\switcheroo_plus`
+- Build/test scripts: `build.bat`, `test.bat`, `run.bat`
+- Plan file attempted: `g:\github\switcheroo_plus.plan\switcheroo-plus-fixes-design.md` — did not exist
+- Commit made: `80ecb83 fix: make WinApi public, clean CapsLock+Tab hook, add CapsLock option persistence`
+- Key files changed:
+  - `Core/WinApi.cs` (made public)
+  - `Switcheroo/PreviousAppHook.cs` (removed false-positive timer)
+  - `Switcheroo/OptionsWindow.xaml.cs` (CapsLock flag persistence, AutoStart try/catch)
+  - `Switcheroo/Config.cs` (new config path `~/.config/.switcheroo_plus/config.jsonc`, legacy migration)
+  - `Switcheroo/MainWindow.xaml.cs` (auto-mode guards, automation API methods, `ReloadConfig`, `HideWindow`)
+  - `Switcheroo/Program.cs` (`Main(string[] args)` parsing `--auto`)
+  - `Switcheroo/Switcheroo.csproj` (includes Automation sources)
+  - `Switcheroo/Automation/AutomationServer.cs` (named-pipe server)
+  - `Switcheroo/Automation/JsonHelper.cs` (dependency-free JSON)
+  - `Switcheroo/Automation/AutomationClient.cs` (CLI pipe client)
+  - `AutomationTests/Run-AutomationTests.ps1` (end-to-end harness)
+  - `AGENTS.md` (GUI-process safety rule)
+- Test results:
+  - NUnit: 36/36 passed
+  - Automation pipe: ping/show/setquery/getwindows/hide/getconfig/previousapp all passed
+
+## Model
+
+```
+[User prompts]
+    │
+    ▼
+[build.bat / test.bat / run.bat]
+    │
+    ▼
+[WPF MainWindow]
+    │── hotkey registration (Alt+Space / Alt+Tab) ── can throw "already in use"
+    │── Options dialog ── saves to Config (now ~/.config/.switcheroo_plus/config.jsonc)
+    │── PreviousAppHook (CapsLock+Tab) ── low-level keyboard hook
+    │── AutomationServer ── named pipe "switcheroo_plus_automation"
+    │       └── JSON commands: ping, show, setquery, getwindows, hide, getconfig, previousapp
+    │
+    ▼
+[AutomationTests\Run-AutomationTests.ps1] launches with --auto and drives pipe
+```
+
+## Hypothesis → verification
+
+- H1: Build fails because `WinApi` is internal. Verified by reading error output; fixed by making class public.
+- H2: GUI crashes on save because AutoStart shortcut creation throws. Verified by reproducing crash; fixed with try/catch.
+- H3: Main hotkey reverts because `ReloadConfig` does not re-apply hotkey after Options closes. Verified by observing Alt+Space returns after options; fixed by calling hotkey reload in `ReloadConfig`.
+- H4: Previous-app shortcut does not switch windows because it was calling `SwitchToThisWindow` on windows not passing `IsAltTabWindow`. Verified by code inspection; fixed to use `AppWindow.IsAltTabWindow()` and `SwitchTo()`.
+- H5: Blocking "hotkey already in use" popup prevents automation. Verified on every startup; fixed with `--auto` flag that skips hotkey registration and update-check popups.
+- H6: Automation pipe responses show `?` due to UTF-8 BOM/encoding mismatch. Verified by running test script; fixed by using `new UTF8Encoding(false)` on both sides and reading line-by-line.
+
+## Decisions
+
+- Config path moved from `%USERPROFILE%\switcheroo\config.jsonc` to `~/.config/.switcheroo_plus/config.jsonc`. Legacy file is migrated automatically if present.
+- `--auto` mode suppresses startup dialogs but still starts the named-pipe server so tests can connect.
+- Automation uses a dedicated thread + `NamedPipeServerStream` (Byte mode) rather than async/Task, because WPF Dispatcher/thread-affinity issues surfaced when commands were executed on a captured `SynchronizationContext`. Final fix was to dispatch each command via `MainWindow.Dispatcher.Invoke`.
+- JSON serialization kept dependency-free via a small internal `JsonHelper`.
+- Previous-app logic now filters with `AppWindow.IsAltTabWindow()` and calls `SwitchTo()` instead of `SwitchToThisWindow`.
+- The root `AGENTS.md` was updated with a safety rule: never start `switcheroo_plus.exe` or any interactive Windows process without a defined timeout and a reliable communication/termination mechanism.
+
+## Open risks
+
+- CapsLock+Tab was wired and persisted, but it has not been manually exercised on the user's machine because testing focused on the automation path under `--auto`. If the hook still swallows CapsLock unexpectedly, revisit `PreviousAppHook` and the `CapsLock` flag detection in `OptionsWindow`.
+- `--auto` disables global hotkeys, so automation tests cannot exercise actual hotkey invocation; they only drive the overlay API. A future harness could send synthetic input if needed.
+- The named-pipe server runs on a background thread but does not enforce authentication/ACL; only local clients can connect, but any local process can send commands. This is acceptable for local auto-testing but should be documented.
+- Config migration is one-way (old file is read once, then new file is written). If the user wants to keep both in sync, that is not implemented.
+- `RunOnStartup` shortcut creation still silently fails under `--auto`/non-elevated scenarios; the user is not notified because it is wrapped in try/catch. This matches the request to prevent crashes, but may hide legitimate configuration issues.
+</code></pre>
+    </section>
+  </main>
+</body>
+</html>

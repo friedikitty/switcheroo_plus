@@ -33,9 +33,11 @@ namespace Switcheroo
         private const string mutex_id = "DBDE24E4-91F6-11DF-B495-C536DFD72085-switcheroo";
 
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
-            RunAsAdministratorIfConfigured();
+            var autoMode = IsAutoMode(args);
+            if (!autoMode)
+                RunAsAdministratorIfConfigured();
 
             using (var mutex = new Mutex(false, mutex_id))
             {
@@ -60,7 +62,7 @@ namespace Switcheroo
 
                     var app = new App
                     {
-                        MainWindow = new MainWindow()
+                        MainWindow = new MainWindow(autoMode)
                     };
                     app.Run();
                 }
@@ -70,6 +72,20 @@ namespace Switcheroo
                         mutex.ReleaseMutex();
                 }
             }
+        }
+
+        private static bool IsAutoMode(string[] args)
+        {
+            if (args == null) return false;
+            foreach (var arg in args)
+            {
+                if (string.Equals(arg, "--auto", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "-auto", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void RunAsAdministratorIfConfigured()

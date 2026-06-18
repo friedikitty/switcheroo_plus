@@ -22,9 +22,11 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -35,6 +37,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ManagedWinapi;
 using ManagedWinapi.Windows;
+using Switcheroo.Automation;
 using Switcheroo.Core;
 using Switcheroo.Core.Matchers;
 using Application = System.Windows.Application;
@@ -67,10 +70,18 @@ namespace Switcheroo
         // Config + previous-app tracking
         private SwitcherooConfig _config;
         private SystemWindow _previousWindow;
-        private SystemWindow _currentWindow;
+        private AppWindow _currentWindow;
+        private AutomationServer _automationServer;
+        private readonly bool _autoMode;
 
         public MainWindow()
+            : this(false)
         {
+        }
+
+        public MainWindow(bool autoMode)
+        {
+            _autoMode = autoMode;
             InitializeComponent();
 
             _config = ConfigManager.Load();
@@ -83,10 +94,15 @@ namespace Switcheroo
             SetUpPreviousAppHotKey();
             SetUpAltTabHook();
 
-            CheckForUpdates();
+            if (!_autoMode)
+                CheckForUpdates();
 
             Opacity = 0;
             SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
+
+            _automationServer = new AutomationServer(this);
+            _automationServer.Start();
+
         }
 
         /// =================================
@@ -194,7 +210,7 @@ namespace Switcheroo
             {
                 var win = _filteredWindowList[index];
                 _previousWindow = _currentWindow;
-                _currentWindow = new SystemWindow(win.HWnd);
+                _currentWindow = win.AppWindow;
                 win.AppWindow.SwitchToLastVisibleActivePopup();
                 HideWindow();
             }
@@ -210,10 +226,12 @@ namespace Switcheroo
             _hotkey.HotkeyPressed += hotkey_HotkeyPressed;
             try
             {
-                _hotkey.Enabled = _config.EnableHotKey;
+                if (!_autoMode)
+                    _hotkey.Enabled = _config.EnableHotKey;
             }
             catch (HotkeyAlreadyInUseException)
             {
+                if (_autoMode) return;
                 var boxText = "The current hotkey for activating Switcheroo is in use by another program." +
                               Environment.NewLine +
                               Environment.NewLine +
@@ -229,7 +247,8 @@ namespace Switcheroo
             _previousAppHotkey.HotkeyPressed += previousAppHotkey_Pressed;
             try
             {
-                _previousAppHotkey.Enabled = _config.PreviousAppEnabled;
+                if (!_autoMode)
+                    _previousAppHotkey.Enabled = _config.PreviousAppEnabled;
             }
             catch (HotkeyAlreadyInUseException)
             {
@@ -288,11 +307,10 @@ namespace Switcheroo
             // If we already have a tracked previous window and it is still alive, toggle.
             if (_previousWindow != null && !_previousWindow.IsClosed && _previousWindow.HWnd != current.HWnd)
             {
-                _currentWindow = current;
-                var temp = _currentWindow;
-                _currentWindow = _previousWindow;
-                _previousWindow = temp;
-                SystemWindow.ForegroundWindow = _currentWindow;
+                var previous = _previousWindow;
+                _previousWindow = current;
+                _currentWindow = new AppWindow(previous.HWnd);
+                _currentWindow.SwitchTo();
                 return;
             }
 
@@ -300,12 +318,12 @@ namespace Switcheroo
             var prevHwnd = WinApi.GetWindow(current.HWnd, WinApi.GetWindowCmd.GW_HWNDPREV);
             while (prevHwnd != IntPtr.Zero)
             {
-                var candidate = new SystemWindow(prevHwnd);
-                if (prevHwnd != self && candidate.Visible && !string.IsNullOrEmpty(candidate.Title))
+                var candidate = new AppWindow(prevHwnd);
+                if (prevHwnd != self && candidate.IsAltTabWindow())
                 {
                     _previousWindow = current;
                     _currentWindow = candidate;
-                    SystemWindow.ForegroundWindow = _currentWindow;
+                    _currentWindow.SwitchTo();
                     return;
                 }
                 prevHwnd = WinApi.GetWindow(prevHwnd, WinApi.GetWindowCmd.GW_HWNDPREV);
@@ -490,7 +508,7 @@ namespace Switcheroo
             }), DispatcherPriority.Render);
 
             // Remember the current foreground window before we switch
-            _currentWindow = SystemWindow.ForegroundWindow;
+            _currentWindow = new AppWindow(SystemWindow.ForegroundWindow.HWnd);
         }
 
         private static bool AreWindowsRelated(SystemWindow window1, SystemWindow window2)
@@ -542,14 +560,14 @@ namespace Switcheroo
             {
                 var win = (AppWindowViewModel)item;
                 _previousWindow = _currentWindow;
-                _currentWindow = new SystemWindow(win.HWnd);
+                _currentWindow = win.AppWindow;
                 win.AppWindow.SwitchToLastVisibleActivePopup();
             }
 
             HideWindow();
         }
 
-        private void HideWindow()
+        public void HideWindow()
         {
             if (_windowCloser != null)
             {
@@ -647,6 +665,11 @@ namespace Switcheroo
         {
             _notifyIcon.Dispose();
             _notifyIcon = null;
+            if (_automationServer != null)
+            {
+                _automationServer.Dispose();
+                _automationServer = null;
+            }
             _hotkey.Dispose();
             if (_previousAppHotkey != null)
                 _previousAppHotkey.Dispose();
@@ -658,11 +681,35 @@ namespace Switcheroo
         {
             _config = ConfigManager.Load();
 
+            // Refresh main activation hotkey from config.
+            if (_hotkey != null)
+            {
+                try
+                {
+                    _hotkey.LoadSettings();
+                    if (!_autoMode)
+                        _hotkey.Enabled = _config.EnableHotKey;
+                }
+                catch (HotkeyAlreadyInUseException)
+                {
+                    if (_autoMode) return;
+                    var boxText = "The current hotkey for activating Switcheroo is in use by another program." +
+                                  Environment.NewLine +
+                                  Environment.NewLine +
+                                  "You can change the hotkey by right-clicking the Switcheroo icon in the system tray and choosing 'Options'.";
+                    MessageBox.Show(boxText, "Hotkey already in use", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+
             // Refresh previous-app hotkey state (OptionsWindow doesn't manage this object)
             if (_previousAppHotkey != null)
             {
-                _previousAppHotkey.LoadPreviousAppSettings();
-                try { _previousAppHotkey.Enabled = _config.PreviousAppEnabled; }
+                try
+                {
+                    _previousAppHotkey.LoadPreviousAppSettings();
+                    if (!_autoMode)
+                        _previousAppHotkey.Enabled = _config.PreviousAppEnabled;
+                }
                 catch (HotkeyAlreadyInUseException)
                 {
                     if (_config.PreviousAppEnabled && IsCapsLockPreviousApp())
@@ -679,6 +726,103 @@ namespace Switcheroo
                 DisposePreviousAppHook();
             SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
         }
+
+        #region Automation API
+
+        public void ShowAndActivate()
+        {
+            if (Visibility != Visibility.Visible)
+            {
+                tb.IsEnabled = true;
+                _foregroundWindow = SystemWindow.ForegroundWindow;
+                RestoreWindowSize();
+                Show();
+                Activate();
+                LoadData(InitialFocus.NextItem);
+                Opacity = 1;
+            }
+        }
+
+        public void SetQuery(string query)
+        {
+            if (Visibility != Visibility.Visible)
+            {
+                ShowAndActivate();
+            }
+            tb.Text = query ?? string.Empty;
+            tb.Focus();
+        }
+
+        public List<Dictionary<string, string>> GetWindowList()
+        {
+            var result = new List<Dictionary<string, string>>();
+            if (_filteredWindowList == null)
+                return result;
+
+            for (int i = 0; i < _filteredWindowList.Count; i++)
+            {
+                var vm = _filteredWindowList[i];
+                result.Add(new Dictionary<string, string>
+                {
+                    { "index", i.ToString() },
+                    { "title", vm.AppWindow.Title },
+                    { "process", vm.AppWindow.ProcessTitle },
+                    { "shortcut", vm.ShortcutKey ?? string.Empty }
+                });
+            }
+            return result;
+        }
+
+        public void SelectIndex(int index)
+        {
+            if (index >= 0 && index < lb.Items.Count)
+            {
+                lb.SelectedIndex = index;
+                ScrollSelectedItemIntoView();
+            }
+        }
+
+        public void ActivateSelectedWindow()
+        {
+            Switch();
+        }
+
+        public void TriggerPreviousApp()
+        {
+            previousAppHotkey_Pressed(this, EventArgs.Empty);
+        }
+
+        public void ApplyConfig(string configJson)
+        {
+            try
+            {
+                var path = SwitcherooConfig.ConfigPath;
+                var dir = SwitcherooConfig.ConfigDirectory;
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(path, configJson, Encoding.UTF8);
+                ReloadConfig();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("ApplyConfig failed: " + ex);
+                throw;
+            }
+        }
+
+        public string GetConfigJson()
+        {
+            try
+            {
+                return File.ReadAllText(SwitcherooConfig.ConfigPath);
+            }
+            catch
+            {
+                return "{}";
+            }
+        }
+
+        #endregion
 
         private void MenuButton_Click(object sender, RoutedEventArgs e)
         {

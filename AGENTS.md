@@ -1,5 +1,15 @@
 # Repository Guidelines
 
+## Agent Safety Rules
+
+### Running the GUI application
+- **Never** start `switcheroo_plus.exe` (or any interactive Windows process) without a defined timeout and a reliable way to communicate with or terminate it.
+- If the app is started for verification, always:
+  1. Confirm the process is still alive after launch.
+  2. Use an established IPC mechanism (named pipe, TCP, window message) to communicate; do not rely on the presence of a main window or taskbar icon.
+  3. Kill the process cleanly after the test if it has not exited on its own.
+- A hanging or crashed GUI process must be treated as a test failure, not left running indefinitely.
+
 ## Project Overview
 
 Switcheroo is a Windows incremental-search task switcher (Alt+Space / Alt+Tab replacement). It enumerates all top-level windows, lets the user type a few characters of a window title, and switches to the selected window. Originally written by James Sulak (2009), maintained by Regin Larsen since 2014.

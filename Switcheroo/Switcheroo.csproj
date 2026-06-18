@@ -90,6 +90,8 @@
     </Page>
     <Compile Include="AltTabHook.cs" />
     <Compile Include="PreviousAppHook.cs" />
+    <Compile Include="Automation\\JsonHelper.cs" />
+    <Compile Include="Automation\\AutomationServer.cs" />
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
