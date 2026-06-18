@@ -77,7 +77,25 @@ namespace Switcheroo.Automation
             if (value is bool b) return b ? "true" : "false";
             if (value is int || value is long || value is double || value is float) return value.ToString();
             if (value is string s) return "\"" + Escape(s) + "\"";
-            if (value is Dictionary<string, object> dict) return Encode(dict);
+            // Encode dictionaries (Dictionary<string,string>, Dictionary<string,object>, etc.)
+            // as JSON objects. Without this, Dictionary<string,string> fell through to the
+            // IEnumerable branch and was serialized as an array of "[key, value]" strings.
+            if (value is System.Collections.IDictionary dict)
+            {
+                var sb = new StringBuilder();
+                sb.Append("{");
+                bool first = true;
+                foreach (System.Collections.DictionaryEntry entry in dict)
+                {
+                    if (!first) sb.Append(",");
+                    first = false;
+                    sb.AppendFormat("\"{0}\":", Escape(Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture)));
+                    sb.Append(EncodeValue(entry.Value));
+                }
+                sb.Append("}");
+                return sb.ToString();
+            }
+            if (value is Dictionary<string, object> dictObj) return Encode(dictObj);
             if (value is System.Collections.IEnumerable enumerable)
             {
                 var sb = new StringBuilder();

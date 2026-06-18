@@ -203,6 +203,35 @@ namespace Switcheroo.Automation
                     response["ok"] = true;
                     break;
 
+                case "installprevhook":
+                    response["ok"] = _mainWindow.InstallPreviousAppHookForTest();
+                    response["active"] = _mainWindow.IsPreviousAppHookActive;
+                    break;
+
+                case "resetprevwindow":
+                    _mainWindow.ResetPreviousWindow();
+                    response["ok"] = true;
+                    break;
+
+                case "getforeground":
+                    response["foreground"] = _mainWindow.GetForegroundInfo();
+                    break;
+
+                case "setforeground":
+                    {
+                        long hv = 0;
+                        string raw = request.ContainsKey("hwnd") ? request["hwnd"] ?? "" : "";
+                        long.TryParse(raw.Trim(), System.Globalization.NumberStyles.HexNumber,
+                            System.Globalization.CultureInfo.InvariantCulture, out hv);
+                        _mainWindow.SetForegroundByHwnd(hv);
+                        response["ok"] = true;
+                    }
+                    break;
+
+                case "prevstate":
+                    response["state"] = _mainWindow.GetPreviousAppState();
+                    break;
+
                 case "setconfig":
                     if (request.ContainsKey("config"))
                     {

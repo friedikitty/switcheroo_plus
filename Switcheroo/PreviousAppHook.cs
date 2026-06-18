@@ -19,6 +19,8 @@
  */
 
 using System;
+using System.Windows.Forms;
+using ManagedWinapi;
 using ManagedWinapi.Hooks;
 
 namespace Switcheroo
@@ -28,23 +30,28 @@ namespace Switcheroo
     /// into a previous-app toggle.
     /// </summary>
     /// <remarks>
-    /// This is used instead of <c>RegisterHotKey</c> because RegisterHotKey cannot
-    /// represent CapsLock as a modifier and silently fails for combos Windows owns
-    /// (such as Alt+Tab). The low-level hook sees every keystroke, so it reliably
-    /// detects the exact configured combination regardless of what the OS does with
-    /// it.
     /// <para>
-    /// Modifier state is tracked from the message stream itself (rather than polled
-    /// via <c>GetAsyncKeyState</c>) so detection is consistent on the hook thread.
-    /// When the target key goes down with exactly the required modifiers held, the
-    /// <see cref="Pressed"/> event fires and the keystroke is swallowed so the OS
-    /// does not also act on it.
+    /// This mirrors the proven approach used by <see cref="AltTabHook"/>: a
+    /// <c>WH_KEYBOARD_LL</c> hook that watches for the target key going down and
+    /// reads modifier state through <see cref="KeyboardKey.AsyncState"/>
+    /// (<c>GetAsyncKeyState</c>) at that moment. Polling the global key state is
+    /// reliable regardless of which side (left/right) of a modifier the user
+    /// pressed and regardless of the order in which keys were reported to the
+    /// hook. Tracking modifiers from the message stream (a previous attempt) is
+    /// fragile and is intentionally NOT used here.
     /// </para>
     /// <para>
-    /// When CapsLock is part of the shortcut, every CapsLock key event is swallowed
-    /// so the keyboard LED / toggle state does not flip while it is used as a
-    /// modifier. Note: if CapsLock has been remapped or disabled via a registry
-    /// Scancode Map, the hook will never see it and this shortcut cannot work.
+    /// <c>RegisterHotKey</c> cannot express CapsLock as a modifier and silently
+    /// fails for combos Windows owns (such as Alt+Tab), so the previous-app
+    /// feature always goes through this hook.
+    /// </para>
+    /// <para>
+    /// When the target key goes down with exactly the required modifiers held,
+    /// <see cref="Pressed"/> fires and the keystroke is swallowed so the OS does
+    /// not also act on it. CapsLock, when it is part of the combo, is swallowed
+    /// on every event so the keyboard LED / toggle state does not flip; note that
+    /// if CapsLock has been removed via a registry Scancode Map the hook will
+    /// never observe it and CapsLock-based combos cannot work.
     /// </para>
     /// </remarks>
     public class PreviousAppHook : IDisposable
@@ -52,11 +59,22 @@ namespace Switcheroo
         public event EventHandler Pressed;
 
         private const int WM_KEYDOWN = 0x0100;
-        private const int WM_KEYUP = 0x0101;
         private const int WM_SYSKEYDOWN = 0x0104;
-        private const int WM_SYSKEYUP = 0x0105;
+        private const int VK_CAPITAL = 0x14;
+        private const int CapsLockScanCode = 0x3A;
 
         private readonly LowLevelKeyboardHook _hook;
+
+        // Modifier probes (global async state). Same pattern as AltTabHook.
+        private readonly KeyboardKey _lAltKey = new KeyboardKey(Keys.LMenu);
+        private readonly KeyboardKey _rAltKey = new KeyboardKey(Keys.RMenu);
+        private readonly KeyboardKey _lCtrlKey = new KeyboardKey(Keys.LControlKey);
+        private readonly KeyboardKey _rCtrlKey = new KeyboardKey(Keys.RControlKey);
+        private readonly KeyboardKey _lShiftKey = new KeyboardKey(Keys.LShiftKey);
+        private readonly KeyboardKey _rShiftKey = new KeyboardKey(Keys.RShiftKey);
+        private readonly KeyboardKey _lWinKey = new KeyboardKey(Keys.LWin);
+        private readonly KeyboardKey _rWinKey = new KeyboardKey(Keys.RWin);
+        private readonly KeyboardKey _capsKey = new KeyboardKey(Keys.Capital);
 
         private readonly bool _wantAlt;
         private readonly bool _wantCtrl;
@@ -64,13 +82,6 @@ namespace Switcheroo
         private readonly bool _wantWin;
         private readonly bool _wantCapsLock;
         private readonly int _vkCode;
-
-        // Live modifier state, tracked from the low-level message stream.
-        private bool _altDown;
-        private bool _ctrlDown;
-        private bool _shiftDown;
-        private bool _winDown;
-        private bool _capsLockDown;
 
         public PreviousAppHook(bool alt, bool ctrl, bool shift, bool win, bool capsLock, int vkCode)
         {
@@ -87,9 +98,12 @@ namespace Switcheroo
 
         public void StartHook()
         {
-            _altDown = _ctrlDown = _shiftDown = _winDown = _capsLockDown = false;
             _hook.StartHook();
+            IsHookStarted = true;
         }
+
+        /// <summary>Exposed for diagnostics / automated tests.</summary>
+        public bool IsHookStarted { get; private set; }
 
         private void OnMessageIntercepted(LowLevelMessage lowLevelMessage, ref bool handled)
         {
@@ -97,50 +111,27 @@ namespace Switcheroo
             if (handled || keyboardMessage == null)
                 return;
 
-            var msg = keyboardMessage.Message;
-            var vk = keyboardMessage.VirtualKeyCode;
-            var isDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
-            var isUp = msg == WM_KEYUP || msg == WM_SYSKEYUP;
-
-            // Track modifiers as they flow past, keeping state in sync. They are
-            // allowed to pass through (we only swallow the final shortcut).
-            if (IsAltKey(vk))
+            // When CapsLock is part of the shortcut, swallow it on every event so
+            // the keyboard LED / toggle state does not flip while it is held.
+            // (If CapsLock is stripped by a registry Scancode Map this branch is
+            // simply never reached and CapsLock combos will not work.)
+            if (_wantCapsLock && (keyboardMessage.VirtualKeyCode == VK_CAPITAL ||
+                                  keyboardMessage.ScanCode == CapsLockScanCode))
             {
-                if (isDown) _altDown = true; else if (isUp) _altDown = false;
-                return;
-            }
-            if (IsCtrlKey(vk))
-            {
-                if (isDown) _ctrlDown = true; else if (isUp) _ctrlDown = false;
-                return;
-            }
-            if (IsShiftKey(vk))
-            {
-                if (isDown) _shiftDown = true; else if (isUp) _shiftDown = false;
-                return;
-            }
-            if (IsWinKey(vk))
-            {
-                if (isDown) _winDown = true; else if (isUp) _winDown = false;
-                return;
-            }
-
-            // CapsLock: when it is part of the shortcut, swallow it so the keyboard
-            // LED / toggle state does not flip while it is held as a modifier.
-            if (_wantCapsLock && IsCapsLockKey(vk, keyboardMessage.ScanCode))
-            {
-                if (isDown) _capsLockDown = true; else if (isUp) _capsLockDown = false;
                 handled = true;
                 return;
             }
 
-            if (!isDown || vk != _vkCode)
+            // Only evaluate on the target key going DOWN.
+            if (keyboardMessage.VirtualKeyCode != _vkCode)
+                return;
+            if (keyboardMessage.Message != WM_KEYDOWN && keyboardMessage.Message != WM_SYSKEYDOWN)
                 return;
 
             if (ModifiersMatch())
             {
-                // Consume the shortcut so the OS doesn't also act on it (e.g. so
-                // Alt+Tab does not open the built-in Windows switcher).
+                // Consume the keystroke so the OS does not also act on it (e.g. so
+                // Ctrl+Shift+E is not delivered to the focused application).
                 handled = true;
                 OnPressed();
             }
@@ -148,14 +139,21 @@ namespace Switcheroo
 
         private bool ModifiersMatch()
         {
-            // Exact match: every wanted modifier must be down and every unwanted
-            // modifier must be up. CapsLock only matters when it is part of the combo.
-            if (_altDown != _wantAlt) return false;
-            if (_ctrlDown != _wantCtrl) return false;
-            if (_shiftDown != _wantShift) return false;
-            if (_winDown != _wantWin) return false;
-            if (_wantCapsLock && !_capsLockDown) return false;
+            // Exact match: every wanted modifier must currently be down and every
+            // unwanted modifier must be up. Both sides of each modifier are checked.
+            if (IsDown(_lAltKey, _rAltKey) != _wantAlt) return false;
+            if (IsDown(_lCtrlKey, _rCtrlKey) != _wantCtrl) return false;
+            if (IsDown(_lShiftKey, _rShiftKey) != _wantShift) return false;
+            if (IsDown(_lWinKey, _rWinKey) != _wantWin) return false;
+            if (_wantCapsLock && (IsDown(_capsKey, null) == false)) return false;
             return true;
+        }
+
+        private static bool IsDown(KeyboardKey primary, KeyboardKey alternate)
+        {
+            if ((primary.AsyncState & 0x8000) != 0) return true;
+            if (alternate != null && (alternate.AsyncState & 0x8000) != 0) return true;
+            return false;
         }
 
         private void OnPressed()
@@ -163,31 +161,6 @@ namespace Switcheroo
             var handler = Pressed;
             if (handler != null)
                 handler(this, EventArgs.Empty);
-        }
-
-        private static bool IsAltKey(int vk)
-        {
-            return vk == 0x12 || vk == 0xA4 || vk == 0xA5; // VK_MENU, VK_LMENU, VK_RMENU
-        }
-
-        private static bool IsCtrlKey(int vk)
-        {
-            return vk == 0x11 || vk == 0xA2 || vk == 0xA3; // VK_CONTROL, VK_LCONTROL, VK_RCONTROL
-        }
-
-        private static bool IsShiftKey(int vk)
-        {
-            return vk == 0x10 || vk == 0xA0 || vk == 0xA1; // VK_SHIFT, VK_LSHIFT, VK_RSHIFT
-        }
-
-        private static bool IsWinKey(int vk)
-        {
-            return vk == 0x5B || vk == 0x5C; // VK_LWIN, VK_RWIN
-        }
-
-        private static bool IsCapsLockKey(int vk, int scanCode)
-        {
-            return vk == 0x14 || scanCode == 0x3A; // VK_CAPITAL or CapsLock scan code
         }
 
         public void Dispose()

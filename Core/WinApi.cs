@@ -207,6 +207,76 @@ namespace Switcheroo.Core
         [DllImport("user32.dll", ExactSpelling = true)]
         public static extern uint GetWindowThreadProcessId(IntPtr hwindow, out uint processId);
 
+        [DllImport("user32.dll", ExactSpelling = true)]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("kernel32.dll")]
+        public static extern uint GetCurrentThreadId();
+
+        public const int SW_RESTORE = 9;
+        public const int SW_SHOW = 5;
+
+        /// <summary>
+        /// Brings a window to the foreground reliably, working around the Windows
+        /// foreground-lock. <c>SwitchToThisWindow</c> / <c>SetForegroundWindow</c>
+        /// alone are blocked when the calling process is NOT already the foreground
+        /// process (for example, when the previous-app keyboard hook fires while the
+        /// user is in another application). By briefly attaching the input queues of
+        /// the calling thread, the foreground window's thread and the target's
+        /// thread, <c>SetForegroundWindow</c> is permitted to take effect.
+        /// </summary>
+        public static void ForceSwitchToWindow(IntPtr targetHwnd)
+        {
+            if (targetHwnd == IntPtr.Zero) return;
+
+            var foregroundHwnd = GetForegroundWindow();
+            var currentThread = GetCurrentThreadId();
+            uint targetProcId;
+            uint foregroundProcId;
+            uint targetThreadId = GetWindowThreadProcessId(targetHwnd, out targetProcId);
+            uint foregroundThreadId = GetWindowThreadProcessId(foregroundHwnd, out foregroundProcId);
+
+            bool attachedForeground = false;
+            bool attachedTarget = false;
+            try
+            {
+                if (foregroundThreadId != currentThread)
+                    attachedForeground = AttachThreadInput(currentThread, foregroundThreadId, true);
+                if (targetThreadId != currentThread)
+                    attachedTarget = AttachThreadInput(currentThread, targetThreadId, true);
+
+                if (IsIconic(targetHwnd))
+                    ShowWindowAsync(targetHwnd, SW_RESTORE);
+                else
+                    ShowWindowAsync(targetHwnd, SW_SHOW);
+
+                SetForegroundWindow(targetHwnd);
+            }
+            finally
+            {
+                if (attachedForeground)
+                    AttachThreadInput(currentThread, foregroundThreadId, false);
+                if (attachedTarget)
+                    AttachThreadInput(currentThread, targetThreadId, false);
+            }
+        }
+
         [DllImport("user32.dll")]
         public static extern uint MapVirtualKeyEx(uint uCode, MapVirtualKeyMapTypes uMapType, IntPtr dwhkl);
 

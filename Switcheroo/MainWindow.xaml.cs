@@ -290,7 +290,7 @@ namespace Switcheroo
                 var previous = _previousWindow;
                 _previousWindow = current;
                 _currentWindow = new AppWindow(previous.HWnd);
-                _currentWindow.SwitchTo();
+                WinApi.ForceSwitchToWindow(previous.HWnd);
                 return;
             }
 
@@ -306,7 +306,7 @@ namespace Switcheroo
                 {
                     _previousWindow = current;
                     _currentWindow = candidate;
-                    _currentWindow.SwitchTo();
+                    WinApi.ForceSwitchToWindow(prevHwnd);
                     return;
                 }
                 prevHwnd = WinApi.GetWindow(prevHwnd, WinApi.GetWindowCmd.GW_HWNDNEXT);
@@ -728,6 +728,7 @@ namespace Switcheroo
                 result.Add(new Dictionary<string, string>
                 {
                     { "index", i.ToString() },
+                    { "hwnd", vm.AppWindow.HWnd.ToInt64().ToString("X") },
                     { "title", vm.AppWindow.Title },
                     { "process", vm.AppWindow.ProcessTitle },
                     { "shortcut", vm.ShortcutKey ?? string.Empty }
@@ -753,6 +754,59 @@ namespace Switcheroo
         public void TriggerPreviousApp()
         {
             previousAppHotkey_Pressed(this, EventArgs.Empty);
+        }
+
+        // ----- Test/diagnostic helpers (used by the automation API) -----
+
+        /// <summary>
+        /// Installs the previous-app low-level keyboard hook using the currently
+        /// loaded config. Intended for automated tests that run under --auto
+        /// (where the hook is otherwise not installed), so the real keystroke path
+        /// can be exercised end-to-end.
+        /// </summary>
+        public bool InstallPreviousAppHookForTest()
+        {
+            SetUpPreviousAppLowLevelHook();
+            return _previousAppHook != null && _previousAppHook.IsHookStarted;
+        }
+
+        public bool IsPreviousAppHookActive
+        {
+            get { return _previousAppHook != null; }
+        }
+
+        public void ResetPreviousWindow()
+        {
+            _previousWindow = null;
+        }
+
+        public Dictionary<string, string> GetForegroundInfo()
+        {
+            var fg = SystemWindow.ForegroundWindow;
+            var aw = new AppWindow(fg.HWnd);
+            return new Dictionary<string, string>
+            {
+                { "hwnd", fg.HWnd.ToInt64().ToString("X") },
+                { "title", aw.Title ?? "" },
+                { "process", aw.ProcessTitle ?? "" }
+            };
+        }
+
+        public void SetForegroundByHwnd(long hwnd)
+        {
+            var p = IntPtr.Size == 8 ? new IntPtr(hwnd) : new IntPtr((int)hwnd);
+            WinApi.ForceSwitchToWindow(p);
+        }
+
+        public Dictionary<string, string> GetPreviousAppState()
+        {
+            return new Dictionary<string, string>
+            {
+                { "hookActive", (_previousAppHook != null).ToString().ToLowerInvariant() },
+                { "hookStarted", (_previousAppHook != null && _previousAppHook.IsHookStarted).ToString().ToLowerInvariant() },
+                { "prevHwnd", _previousWindow == null ? "" : _previousWindow.HWnd.ToInt64().ToString("X") },
+                { "currentHwnd", _currentWindow == null ? "" : _currentWindow.HWnd.ToInt64().ToString("X") }
+            };
         }
 
         public void ApplyConfig(string configJson)
