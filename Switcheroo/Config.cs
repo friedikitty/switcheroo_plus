@@ -40,7 +40,7 @@ namespace Switcheroo
         public int ActivateHotKey { get; set; } = 32; // Space
 
         // Previous-app toggle hotkey
-        public bool PreviousAppEnabled { get; set; } = false;
+        public bool PreviousAppEnabled { get; set; } = true;
         public bool PreviousAppAlt { get; set; } = true;
         public bool PreviousAppCtrl { get; set; } = false;
         public bool PreviousAppShift { get; set; } = false;

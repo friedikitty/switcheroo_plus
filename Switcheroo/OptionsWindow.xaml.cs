@@ -97,13 +97,29 @@ namespace Switcheroo
 
         private void Ok_Click(object sender, RoutedEventArgs e)
         {
+            var enableActivationHotKey = HotKeyCheckBox.IsChecked.GetValueOrDefault();
+            var activateWithAltTab = AltTabCheckBox.IsChecked.GetValueOrDefault();
+            var previousAppEnabled = PreviousAppCheckBox.IsChecked.GetValueOrDefault();
+            var validation = HotkeySelectionValidator.Validate(
+                enableActivationHotKey,
+                ToSelection(_hotkeyViewModel),
+                activateWithAltTab,
+                previousAppEnabled,
+                ToSelection(_previousAppViewModel));
+
+            if (!validation.IsValid)
+            {
+                MessageBox.Show(validation.Message, "Invalid shortcut combination", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             var closeOptionsWindow = true;
 
             try
             {
                 _hotkey.Enabled = false;
 
-                if (_config.EnableHotKey)
+                if (enableActivationHotKey)
                 {
                     // Change the active hotkey
                     _hotkey.Alt = _hotkeyViewModel.Alt;
@@ -128,7 +144,7 @@ namespace Switcheroo
                 closeOptionsWindow = false;
             }
 
-            _config.EnableHotKey = HotKeyCheckBox.IsChecked.GetValueOrDefault();
+            _config.EnableHotKey = enableActivationHotKey;
             // Persist the activation hotkey from the editor view model into the
             // JSONC config (the single source of truth used at startup).
             _config.ActivateAlt = _hotkeyViewModel.Alt;
@@ -136,10 +152,10 @@ namespace Switcheroo
             _config.ActivateShift = _hotkeyViewModel.Shift;
             _config.ActivateWindowsKey = _hotkeyViewModel.Windows;
             _config.ActivateHotKey = KeyInterop.VirtualKeyFromKey(_hotkeyViewModel.KeyCode);
-            _config.AltTabHook = AltTabCheckBox.IsChecked.GetValueOrDefault();
+            _config.AltTabHook = activateWithAltTab;
             _config.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
             _config.AzShortcutsEnabled = AzShortcutsCheckBox.IsChecked.GetValueOrDefault();
-            _config.PreviousAppEnabled = PreviousAppCheckBox.IsChecked.GetValueOrDefault();
+            _config.PreviousAppEnabled = previousAppEnabled;
             _config.PreviousAppAlt = _previousAppViewModel.Alt;
             _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;
             _config.PreviousAppShift = _previousAppViewModel.Shift;
@@ -231,6 +247,19 @@ namespace Switcheroo
 
             vm.KeyCode = key;
             return vm;
+        }
+
+        private static HotkeySelection ToSelection(HotkeyViewModel vm)
+        {
+            return new HotkeySelection
+            {
+                Alt = vm.Alt,
+                Ctrl = vm.Ctrl,
+                Shift = vm.Shift,
+                WindowsKey = vm.Windows,
+                CapsLock = vm.CapsLock,
+                KeyCode = KeyInterop.VirtualKeyFromKey(vm.KeyCode)
+            };
         }
 
         private class HotkeyViewModel

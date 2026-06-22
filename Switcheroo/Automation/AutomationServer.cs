@@ -208,6 +208,11 @@ namespace Switcheroo.Automation
                     response["active"] = _mainWindow.IsPreviousAppHookActive;
                     break;
 
+                case "installmainhotkey":
+                    response["ok"] = _mainWindow.InstallActivationHotKeyForTest();
+                    response["active"] = _mainWindow.IsActivationHotKeyActive;
+                    break;
+
                 case "resetprevwindow":
                     _mainWindow.ResetPreviousWindow();
                     response["ok"] = true;

@@ -208,11 +208,23 @@ namespace Switcheroo
             if (index >= 0 && index < _filteredWindowList.Count)
             {
                 var win = _filteredWindowList[index];
-                _previousWindow = _currentWindow;
-                _currentWindow = win.AppWindow;
-                win.AppWindow.SwitchToLastVisibleActivePopup();
-                HideWindow();
+                ActivateAppWindow(_currentWindow, win.AppWindow, true);
             }
+        }
+
+        private void ActivateAppWindow(AppWindow currentWindow, AppWindow targetWindow, bool hideWindowAfterSwitch)
+        {
+            if (targetWindow == null)
+                return;
+
+            if (currentWindow != null)
+                _previousWindow = currentWindow;
+
+            _currentWindow = targetWindow;
+            targetWindow.SwitchToLastVisibleActivePopup();
+
+            if (hideWindowAfterSwitch)
+                HideWindow();
         }
 
         private void SetUpHotKey()
@@ -282,15 +294,13 @@ namespace Switcheroo
                 return;
 
             var current = SystemWindow.ForegroundWindow;
+            var currentAppWindow = new AppWindow(current.HWnd);
             var self = new WindowInteropHelper(this).Handle;
 
             // If we already have a tracked previous window and it is still alive, toggle.
             if (_previousWindow != null && !_previousWindow.IsClosed && _previousWindow.HWnd != current.HWnd)
             {
-                var previous = _previousWindow;
-                _previousWindow = current;
-                _currentWindow = new AppWindow(previous.HWnd);
-                WinApi.ForceSwitchToWindow(previous.HWnd);
+                ActivateAppWindow(currentAppWindow, new AppWindow(_previousWindow.HWnd), false);
                 return;
             }
 
@@ -304,9 +314,7 @@ namespace Switcheroo
                 var candidate = new AppWindow(prevHwnd);
                 if (prevHwnd != self && candidate.IsAltTabWindow())
                 {
-                    _previousWindow = current;
-                    _currentWindow = candidate;
-                    WinApi.ForceSwitchToWindow(prevHwnd);
+                    ActivateAppWindow(currentAppWindow, candidate, false);
                     return;
                 }
                 prevHwnd = WinApi.GetWindow(prevHwnd, WinApi.GetWindowCmd.GW_HWNDNEXT);
@@ -542,9 +550,7 @@ namespace Switcheroo
             foreach (var item in lb.SelectedItems)
             {
                 var win = (AppWindowViewModel)item;
-                _previousWindow = _currentWindow;
-                _currentWindow = win.AppWindow;
-                win.AppWindow.SwitchToLastVisibleActivePopup();
+                ActivateAppWindow(_currentWindow, win.AppWindow, false);
             }
 
             HideWindow();
@@ -770,9 +776,25 @@ namespace Switcheroo
             return _previousAppHook != null && _previousAppHook.IsHookStarted;
         }
 
+        public bool InstallActivationHotKeyForTest()
+        {
+            if (_hotkey == null)
+                return false;
+
+            _hotkey.LoadSettings();
+            _hotkey.Enabled = false;
+            _hotkey.Enabled = _config.EnableHotKey;
+            return _hotkey.Enabled;
+        }
+
         public bool IsPreviousAppHookActive
         {
             get { return _previousAppHook != null; }
+        }
+
+        public bool IsActivationHotKeyActive
+        {
+            get { return _hotkey != null && _hotkey.Enabled; }
         }
 
         public void ResetPreviousWindow()
