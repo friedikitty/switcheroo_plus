@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="ai-read-order" content="appendix-first">
+  <meta name="ai-primary-section" content="#appendix">
+  <!-- AI-AGENT: Read #appendix (verbatim digest) first. Illustrated sections are optional skim. -->
+  <title>Switcheroo+ Hotkey Reroute Session</title>
+  <style>
+    :root {
+      --ivory: #faf9f5;
+      --slate: #141413;
+      --clay: #d97757;
+      --oat: #e3dacc;
+      --olive: #788c5d;
+      --rust: #b04a3f;
+      --gray-150: #f0eee6;
+      --gray-300: #d1cfc5;
+      --gray-500: #87867f;
+      --gray-700: #3d3d3a;
+      --white: #ffffff;
+      --serif: ui-serif, Georgia, "Times New Roman", serif;
+      --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 2rem 1.5rem 3rem;
+      background: var(--ivory);
+      color: var(--gray-700);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    main { max-width: 920px; margin: 0 auto; }
+    h1, h2, h3 { color: var(--slate); font-family: var(--serif); font-weight: 550; }
+    h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); margin: 0 0 0.25rem; }
+    h2 { font-size: 1.4rem; margin: 2rem 0 0.75rem; border-bottom: 1px solid var(--gray-300); padding-bottom: 0.35rem; }
+    h3 { font-size: 1.05rem; margin: 1.2rem 0 0.45rem; }
+    .meta { font: 0.85rem var(--mono); color: var(--gray-500); margin-bottom: 1.1rem; }
+    .ai-read-order {
+      font: 0.78rem/1.4 var(--mono);
+      color: var(--gray-500);
+      padding: 0.4rem 0;
+      margin: 0 0 0.8rem;
+      border-bottom: 1px solid var(--gray-300);
+    }
+    .ai-read-order a { color: var(--clay); }
+    .tldr {
+      background: var(--slate);
+      color: var(--ivory);
+      padding: 1rem 1.2rem;
+      border-radius: 8px;
+      margin-bottom: 1.6rem;
+    }
+    .tldr h2 { color: var(--ivory); border: none; margin: 0 0 0.45rem; padding: 0; font-size: 1.1rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.7rem; }
+    .chip {
+      background: var(--olive);
+      color: var(--white);
+      border-radius: 999px;
+      padding: 0.18rem 0.55rem;
+      font: 0.75rem var(--mono);
+    }
+    .chip.warn { background: var(--clay); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      margin: 1rem 0;
+      font-size: 0.93rem;
+    }
+    th, td {
+      border: 1px solid var(--gray-300);
+      padding: 0.55rem 0.7rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--gray-150); color: var(--slate); }
+    code {
+      background: var(--gray-150);
+      padding: 0.08rem 0.3rem;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      overflow-x: auto;
+      font: 0.86rem/1.55 var(--mono);
+    }
+    details {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      margin: 0.75rem 0;
+    }
+    summary { cursor: pointer; color: var(--slate); font-weight: 600; }
+    .diagram {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+    .appendix { border-top: 3px solid var(--clay); margin-top: 2.5rem; padding-top: 1rem; }
+  </style>
+</head>
+<body>
+  <aside class="ai-read-order" aria-label="Read order for AI agents" data-reader="ai">
+    <strong>For AI:</strong> Read <a href="#appendix">Appendix — understanding digest</a> first; skip full-page scan unless you need tables or diagrams.
+  </aside>
+
+  <main>
+    <h1>Switcheroo+ Hotkey Reroute Session</h1>
+    <div class="meta">2026-06-22 · session slug: <code>switcheroo-hotkey-reroute</code></div>
+
+    <section class="tldr" id="tldr">
+      <h2>TL;DR</h2>
+      <p>The previous-app hotkey was rerouted to use the same window activation path as the main Switcheroo list selection. The default switch-back shortcut remains <code>Alt+Tab</code>, invalid hotkey combinations are blocked in Options, and the live automation now passes with Notepad plus Paint.</p>
+      <div class="chips">
+        <span class="chip">build passing</span>
+        <span class="chip">41 tests passing</span>
+        <span class="chip">live hotkey automation passing</span>
+        <span class="chip warn">activation check was flaky once, passed on rerun</span>
+      </div>
+    </section>
+
+    <section id="user-prompts">
+      <h2>User prompts</h2>
+      <details open>
+        <summary>Prompt 1 (first prompt)</summary>
+        <pre><code>I want you to read the previous fix in the .memory, the switcheroo_plus is not ready that: 1. Still cant find a default hot key that make the feature "Switch back" work, What I want is something like you press Alt+Tab in windows. YOu need to find that key, and use auto test feature to make it work, you can use two open text notepad process to test it .2. The default hot key of switcherpoo is Alt+Tab, which is not allow because there is an option "Activate Switcheroo with Alt+Tab", hint the user if they set hot key like that. 3. you need to check hotkey conflict, I can set the same hotkey to Activate and the Switch back feature. 4. when the user set the hotkey, you have to make sure nothing except the exe itself is the response exe, otherwise, hint the user.   Auto test until the upper requrest is done.</code></pre>
+      </details>
+      <details>
+        <summary>Prompt 2</summary>
+        <pre><code>You may use a notepad and another app to open whatever, since two files open in notepad will cause them to be merge into one multi tab windows, it may not be good for testing</code></pre>
+      </details>
+      <details>
+        <summary>Prompt 3</summary>
+        <pre><code>use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge. Then keep fixing other problem, that Alt+Tab do switch between recent windows, but it fail to switch back frequently. I dont know why. If  I use the main windows to switch the app, it will succeed. What you want is you reroute the Switch back feature to use the main windows's switch feature between apps.</code></pre>
+      </details>
+    </section>
+
+    <section id="timeline">
+      <h2>Timeline</h2>
+      <table>
+        <thead>
+          <tr><th>Step</th><th>Observation</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Read the previous repo-local session HTML. It explicitly said the real global-hotkey path was still an open risk.</td><td>Used that as the starting point instead of trusting the earlier fix as complete.</td></tr>
+          <tr><td>2</td><td>Previous-app default and validation gaps were still present.</td><td>Added a small hotkey selection validator and unit tests for Alt+Tab reservation and shortcut conflicts.</td></tr>
+          <tr><td>3</td><td>Live testing with two Notepad files was unreliable because modern Notepad merges tabs.</td><td>Switched automation to Notepad plus Paint and activated windows by exact title.</td></tr>
+          <tr><td>4</td><td>User reported switch-back often failed, while switching from the main overlay worked.</td><td>Compared code paths and found previous-app used <code>ForceSwitchToWindow</code> while the overlay used <code>SwitchToLastVisibleActivePopup()</code>.</td></tr>
+          <tr><td>5</td><td>The direct switch-back path was separate from the known-good overlay path.</td><td>Rerouted previous-app to reuse the same activation path as the main overlay selection.</td></tr>
+          <tr><td>6</td><td>One live activation-hotkey run was flaky.</td><td>Reran the automation in isolation; the same script then passed end to end.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="model">
+      <h2>Model</h2>
+      <div class="diagram">
+<pre>Previous-app key press
+        |
+        v
+PreviousAppHook (WH_KEYBOARD_LL)
+        |
+        v
+previousAppHotkey_Pressed()
+        |
+        +-- old path: ForceSwitchToWindow(hwnd)
+        |
+        +-- new path: ActivateAppWindow(current, target, hide=false)
+                          |
+                          v
+                 AppWindow.SwitchToLastVisibleActivePopup()
+
+Main overlay selection
+        |
+        v
+Switch() / SwitchToWindowByIndex()
+        |
+        v
+ActivateAppWindow(current, target, hide=true/false)</pre>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Path</th><th>Before</th><th>After</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Overlay switch</td><td>Already used <code>SwitchToLastVisibleActivePopup()</code></td><td>Now calls shared helper <code>ActivateAppWindow</code></td></tr>
+          <tr><td>Previous-app switch-back</td><td>Used <code>WinApi.ForceSwitchToWindow</code></td><td>Now calls the same shared helper and the same popup-aware switch primitive</td></tr>
+          <tr><td>Tracking state</td><td>Updated separately in three places</td><td>Centralized previous/current window updates in one helper</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verification">
+      <h2>Verification</h2>
+      <table>
+        <thead>
+          <tr><th>Check</th><th>Command</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Build</td><td><code>cmd /c build.bat --config Debug</code></td><td>Pass</td></tr>
+          <tr><td>Unit tests</td><td><code>cmd /c test.bat --config Debug</code></td><td>41/41 passed</td></tr>
+          <tr><td>Live hotkey automation</td><td><code>powershell -ExecutionPolicy Bypass -File .\AutomationTests\Test-Hotkeys.ps1</code></td><td>Pass on rerun: activation, default Alt+Tab switch-back, and toggle-back all passed</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="paths">
+      <h2>Key paths and commands</h2>
+      <table>
+        <thead>
+          <tr><th>What</th><th>Path / command</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Shared hotkey validation</td><td><code>Switcheroo\HotkeySelection.cs</code></td></tr>
+          <tr><td>Options validation hook</td><td><code>Switcheroo\OptionsWindow.xaml.cs</code></td></tr>
+          <tr><td>Rerouted switch-back logic</td><td><code>Switcheroo\MainWindow.xaml.cs</code></td></tr>
+          <tr><td>Automation API</td><td><code>Switcheroo\Automation\AutomationServer.cs</code></td></tr>
+          <tr><td>Live hotkey harness</td><td><code>AutomationTests\Test-Hotkeys.ps1</code></td></tr>
+          <tr><td>Session artifact</td><td><code>.memory\sessions\switcheroo-hotkey-reroute\2026-06-22-switcheroo-hotkey-reroute-session.html</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="open-risks">
+      <h2>Open risks</h2>
+      <ul>
+        <li>The activation-hotkey check was flaky once before passing on rerun. The switch-back reroute itself is verified, but the activation path remains timing-sensitive under synthetic input.</li>
+        <li>The live harness depends on specific desktop apps being present: Notepad and Paint worked on this machine; Command Prompt and tabbed Notepad did not expose stable handles for the test.</li>
+      </ul>
+    </section>
+
+    <section class="appendix" id="appendix">
+      <h2>Appendix — understanding digest</h2>
+      <pre><code>## User prompts (verbatim)
+
+### Prompt 1 (first prompt)
+```text
+I want you to read the previous fix in the .memory, the switcheroo_plus is not ready that: 1. Still cant find a default hot key that make the feature "Switch back" work, What I want is something like you press Alt+Tab in windows. YOu need to find that key, and use auto test feature to make it work, you can use two open text notepad process to test it .2. The default hot key of switcherpoo is Alt+Tab, which is not allow because there is an option "Activate Switcheroo with Alt+Tab", hint the user if they set hot key like that. 3. you need to check hotkey conflict, I can set the same hotkey to Activate and the Switch back feature. 4. when the user set the hotkey, you have to make sure nothing except the exe itself is the response exe, otherwise, hint the user.   Auto test until the upper requrest is done.
+```
+
+### Prompt 2
+```text
+You may use a notepad and another app to open whatever, since two files open in notepad will cause them to be merge into one multi tab windows, it may not be good for testing
+```
+
+### Prompt 3
+```text
+use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge. Then keep fixing other problem, that Alt+Tab do switch between recent windows, but it fail to switch back frequently. I dont know why. If  I use the main windows to switch the app, it will succeed. What you want is you reroute the Switch back feature to use the main windows's switch feature between apps.
+```
+
+## Trigger
+
+The thread started from an incomplete hotkey fix. The user wanted a real default for switch-back, validation for Alt+Tab conflicts, and live automated proof. After that work passed, the user pointed out a deeper behavioral issue: Alt+Tab could move to a recent window, but often failed when toggling back, while switching through the main overlay consistently worked.
+
+## Evidence
+
+- Prior repo-local session HTML at `.memory/sessions/switcheroo-auto-automation/2026-06-18-switcheroo-auto-automation-session.html`
+- `Switcheroo/MainWindow.xaml.cs`
+- `Core/AppWindow.cs`
+- `Switcheroo/OptionsWindow.xaml.cs`
+- `Switcheroo/Automation/AutomationServer.cs`
+- `AutomationTests/Test-Hotkeys.ps1`
+- `cmd /c build.bat --config Debug`
+- `cmd /c test.bat --config Debug`
+- `powershell -ExecutionPolicy Bypass -File .\AutomationTests\Test-Hotkeys.ps1`
+
+## Model
+
+- The main overlay selection path stores `_previousWindow`, sets `_currentWindow`, and uses `AppWindow.SwitchToLastVisibleActivePopup()`.
+- The previous-app path was separate. It stored similar state but used `WinApi.ForceSwitchToWindow(...)` directly.
+- The user symptom matches that split: the main-window path succeeds, while the previous-app path is less reliable.
+
+## Hypothesis -> verification
+
+- Hypothesis 1: the remaining failures are not from the hook detecting the key, but from the activation primitive used after detection.
+  - Verified by code inspection: previous-app used `ForceSwitchToWindow`, while the main overlay path used `SwitchToLastVisibleActivePopup()`.
+- Hypothesis 2: if previous-app reuses the main overlay activation path, switch-back reliability should match the successful manual path.
+  - Verified by patching `MainWindow` to route both paths through a shared `ActivateAppWindow(...)` helper.
+  - Verified by live automation: Notepad + Paint test passed end to end after the reroute.
+
+## Decisions
+
+- Added `Switcheroo/HotkeySelection.cs` to model and validate user-entered hotkeys.
+- Made `PreviousAppEnabled` default to `true` with `Alt+Tab`.
+- Blocked invalid combinations in `OptionsWindow`:
+  - activation shortcut cannot be plain `Alt+Tab`
+  - activation and switch-back cannot be identical
+  - `Activate Switcheroo with Alt+Tab` cannot coexist with switch-back set to `Alt+Tab`
+- Extended automation with `installmainhotkey` and the live `AutomationTests/Test-Hotkeys.ps1` script.
+- Rerouted previous-app switching to the same activation path used by the main overlay selection.
+
+## What was not done
+
+- No new unit test was added for the `MainWindow` reroute itself because the behavior depends on live Win32 window activation and is better covered by the real automation harness already present.
+- No attempt was made to make modern multi-tab Notepad expose a stable `MainWindowHandle`; the harness instead used Notepad plus Paint, which was more reliable on this machine.
+
+## Open risks
+
+- Synthetic activation-hotkey testing was flaky once before passing on rerun. The live automation should still be treated as timing-sensitive.
+- The harness depends on desktop environment details and stock apps available on this host.
+</code></pre>
+    </section>
+  </main>
+</body>
+</html>
