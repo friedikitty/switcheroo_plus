@@ -1,0 +1,1210 @@
+/**
+ * Switcheroo - The incremental-search task switcher for Windows.
+ * http://www.switcheroo.io/
+ * Copyright 2009, 2010 James Sulak
+ * Copyright 2014 Regin Larsen
+ *
+ * Switcheroo is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Switcheroo is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Forms;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using ManagedWinapi;
+using ManagedWinapi.Windows;
+using Switcheroo.Automation;
+using Switcheroo.Core;
+using Switcheroo.Core.Matchers;
+using Application = System.Windows.Application;
+using MenuItem = System.Windows.Forms.MenuItem;
+using MessageBox = System.Windows.MessageBox;
+
+namespace Switcheroo
+{
+    public partial class MainWindow : Window
+    {
+        private WindowCloser _windowCloser;
+        private List<AppWindowViewModel> _unfilteredWindowList;
+        private ObservableCollection<AppWindowViewModel> _filteredWindowList;
+        private NotifyIcon _notifyIcon;
+        private HotKey _hotkey;
+        private PreviousAppHook _previousAppHook;
+
+        public static readonly RoutedUICommand CloseWindowCommand = new RoutedUICommand();
+        public static readonly RoutedUICommand SwitchToWindowCommand = new RoutedUICommand();
+        public static readonly RoutedUICommand ScrollListDownCommand = new RoutedUICommand();
+        public static readonly RoutedUICommand ScrollListUpCommand = new RoutedUICommand();
+        private OptionsWindow _optionsWindow;
+        private AboutWindow _aboutWindow;
+        private AltTabHook _altTabHook;
+        private SystemWindow _foregroundWindow;
+        private bool _altTabAutoSwitch;
+        private bool _isHelpPanelExpanded;
+
+        // Config + previous-app tracking
+        private SwitcherooConfig _config;
+        private SystemWindow _previousWindow;
+        private AppWindow _currentWindow;
+        private AutomationServer _automationServer;
+        private readonly bool _autoMode;
+
+        public MainWindow()
+            : this(false)
+        {
+        }
+
+        public MainWindow(bool autoMode)
+        {
+            _autoMode = autoMode;
+            InitializeComponent();
+
+            _config = ConfigManager.Load();
+
+            SizeChanged += MainWindow_SizeChanged;
+
+            SetUpKeyBindings();
+            SetUpNotifyIcon();
+            SetUpHotKey();
+            SetUpPreviousAppHotKey();
+            SetUpAltTabHook();
+
+            if (!_autoMode)
+                CheckForUpdates();
+
+            Opacity = 0;
+            SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
+
+            _automationServer = new AutomationServer(this);
+            _automationServer.Start();
+
+        }
+
+        /// =================================
+
+        #region Private Methods
+
+        /// =================================
+
+        private void SetUpKeyBindings()
+        {
+            // Intercept navigation and direct-switch keys before child controls see them.
+            PreviewKeyDown += (sender, args) =>
+            {
+                var itemCount = _filteredWindowList == null ? 0 : _filteredWindowList.Count;
+                var action = OverlayKeyActionResolver.Resolve(
+                    args.Key,
+                    args.SystemKey,
+                    Keyboard.Modifiers,
+                    tb.IsKeyboardFocused,
+                    _altTabAutoSwitch,
+                    itemCount);
+
+                if (action.ActionType == OverlayKeyActionType.None)
+                    return;
+
+                if (action.ActionType == OverlayKeyActionType.FocusSearch)
+                {
+                    tb.Focus();
+                    tb.SelectAll();
+                    args.Handled = true;
+                    return;
+                }
+
+                if (action.ActionType == OverlayKeyActionType.PreviousItem)
+                {
+                    PreviousItem();
+                    args.Handled = true;
+                    return;
+                }
+
+                if (action.ActionType == OverlayKeyActionType.NextItem)
+                {
+                    NextItem();
+                    args.Handled = true;
+                    return;
+                }
+
+                if (action.ActionType == OverlayKeyActionType.SwitchToIndex)
+                {
+                    SwitchToWindowByIndex(action.Index);
+                    args.Handled = true;
+                }
+            };
+
+            // Enter and Esc bindings are not executed before the keys have been released.
+            // This is done to prevent that the window being focused after the key presses
+            // to get 'KeyUp' messages.
+
+            KeyDown += (sender, args) =>
+            {
+                // Opacity is set to 0 right away so it appears that action has been taken right away...
+                if (args.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    Opacity = 0;
+                }
+                else if (args.Key == Key.Escape)
+                {
+                    Opacity = 0;
+                }
+                else if (args.SystemKey == Key.S && Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+                {
+                    _altTabAutoSwitch = false;
+                    tb.Text = "";
+                    tb.IsEnabled = true;
+                    tb.Focus();
+                }
+            };
+
+            KeyUp += (sender, args) =>
+            {
+                // ... But only when the keys are release, the action is actually executed
+                if (args.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    Switch();
+                }
+                else if (args.Key == Key.Escape)
+                {
+                    HideWindow();
+                }
+                else if (args.SystemKey == Key.LeftAlt && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    Switch();
+                }
+                else if (args.Key == Key.LeftAlt && _altTabAutoSwitch)
+                {
+                    Switch();
+                }
+            };
+        }
+
+        private void SwitchToWindowByIndex(int index)
+        {
+            if (index >= 0 && index < _filteredWindowList.Count)
+            {
+                var win = _filteredWindowList[index];
+                ActivateAppWindow(_currentWindow, win.AppWindow, true);
+            }
+        }
+
+        private void ActivateAppWindow(AppWindow currentWindow, AppWindow targetWindow, bool hideWindowAfterSwitch)
+        {
+            if (targetWindow == null)
+                return;
+
+            if (currentWindow != null)
+                _previousWindow = currentWindow;
+
+            _currentWindow = targetWindow;
+            targetWindow.SwitchToLastVisibleActivePopup();
+
+            if (hideWindowAfterSwitch)
+                HideWindow();
+        }
+
+        private void SetUpHotKey()
+        {
+            _hotkey = new HotKey();
+            _hotkey.LoadSettings();
+
+            Application.Current.Properties["hotkey"] = _hotkey;
+
+            _hotkey.HotkeyPressed += hotkey_HotkeyPressed;
+            try
+            {
+                if (!_autoMode)
+                    _hotkey.Enabled = _config.EnableHotKey;
+            }
+            catch (HotkeyAlreadyInUseException)
+            {
+                if (_autoMode) return;
+                var boxText = "The current hotkey for activating Switcheroo is in use by another program." +
+                              Environment.NewLine +
+                              Environment.NewLine +
+                              "You can change the hotkey by right-clicking the Switcheroo icon in the system tray and choosing 'Options'.";
+                MessageBox.Show(boxText, "Hotkey already in use", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void SetUpPreviousAppHotKey()
+        {
+            // Previous-app is driven by a low-level keyboard hook (PreviousAppHook)
+            // instead of RegisterHotKey so that combos Windows owns (Alt+Tab) and
+            // combos RegisterHotKey cannot express (CapsLock as a modifier) all
+            // work. Skip in --auto mode and when disabled: the automation API calls
+            // TriggerPreviousApp() directly without needing a global hook.
+            if (_autoMode || !_config.PreviousAppEnabled)
+                return;
+
+            SetUpPreviousAppLowLevelHook();
+        }
+
+        private void SetUpPreviousAppLowLevelHook()
+        {
+            DisposePreviousAppHook();
+            _previousAppHook = new PreviousAppHook(
+                _config.PreviousAppAlt,
+                _config.PreviousAppCtrl,
+                _config.PreviousAppShift,
+                _config.PreviousAppWindowsKey,
+                _config.PreviousAppCapsLock,
+                _config.PreviousAppHotKey);
+            _previousAppHook.Pressed += previousAppHotkey_Pressed;
+            _previousAppHook.StartHook();
+        }
+
+        private void DisposePreviousAppHook()
+        {
+            if (_previousAppHook != null)
+            {
+                _previousAppHook.Pressed -= previousAppHotkey_Pressed;
+                _previousAppHook.Dispose();
+                _previousAppHook = null;
+            }
+        }
+
+        private void previousAppHotkey_Pressed(object sender, EventArgs e)
+        {
+            if (!_config.PreviousAppEnabled)
+                return;
+
+            NativePreviousAppSwitcher.SwitchToPreviousApp();
+        }
+
+        private void SetUpAltTabHook()
+        {
+            _altTabHook = new AltTabHook();
+            _altTabHook.Pressed += AltTabPressed;
+        }
+
+        private void SetUpNotifyIcon()
+        {
+            var icon = Properties.Resources.icon;
+
+            var runOnStartupMenuItem = new MenuItem("Run on Startup", (s, e) => RunOnStartup(s as MenuItem))
+            {
+                Checked = new AutoStart().IsEnabled
+            };
+
+            _notifyIcon = new NotifyIcon
+            {
+                Text = "Switcheroo",
+                Icon = icon,
+                Visible = true,
+                ContextMenu = new System.Windows.Forms.ContextMenu(new[]
+                {
+                    new MenuItem("Options", (s, e) => Options()),
+                    runOnStartupMenuItem,
+                    new MenuItem("About", (s, e) => About()),
+                    new MenuItem("Exit", (s, e) => Quit())
+                })
+            };
+            _notifyIcon.DoubleClick += (s, e) => hotkey_HotkeyPressed(s, e);
+        }
+        private static void RunOnStartup(MenuItem menuItem)
+        {
+            try
+            {
+                var autoStart = new AutoStart
+                {
+                    IsEnabled = !menuItem.Checked
+                };
+                menuItem.Checked = autoStart.IsEnabled;
+            }
+            catch (AutoStartException e)
+            {
+                MessageBox.Show(e.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private static void CheckForUpdates()
+        {
+            var currentVersion = Assembly.GetEntryAssembly().GetName().Version;
+            if (currentVersion == new Version(0, 0, 0, 0))
+            {
+                return;
+            }
+
+            var timer = new DispatcherTimer();
+
+            timer.Tick += async (sender, args) =>
+            {
+                timer.Stop();
+                var latestVersion = await GetLatestVersion();
+                if (latestVersion != null && latestVersion > currentVersion)
+                {
+                    var result = MessageBox.Show(
+                        string.Format(
+                            "Switcheroo v{0} is available (you have v{1}).\r\n\r\nDo you want to download it?",
+                            latestVersion, currentVersion),
+                        "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        Process.Start("https://github.com/kvakulo/Switcheroo/releases/latest");
+                    }
+                }
+                else
+                {
+                    timer.Interval = new TimeSpan(24, 0, 0);
+                    timer.Start();
+                }
+            };
+
+            timer.Interval = new TimeSpan(0, 0, 0);
+            timer.Start();
+        }
+
+        private static async Task<Version> GetLatestVersion()
+        {
+            try
+            {
+                var versionAsString =
+                    await
+                        new WebClient().DownloadStringTaskAsync(
+                            "https://raw.github.com/kvakulo/Switcheroo/update/version.txt");
+                Version newVersion;
+                if (Version.TryParse(versionAsString, out newVersion))
+                {
+                    return newVersion;
+                }
+            }
+            catch (WebException)
+            {
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Populates the window list with the current running windows.
+        /// </summary>
+        private void LoadData(InitialFocus focus)
+        {
+            _unfilteredWindowList = new WindowFinder().GetWindows().Select(window => new AppWindowViewModel(window)).ToList();
+
+            var firstWindow = _unfilteredWindowList.FirstOrDefault();
+
+            var foregroundWindowMovedToBottom = false;
+            
+            // Move first window to the bottom of the list if it's related to the foreground window
+            if (firstWindow != null && AreWindowsRelated(firstWindow.AppWindow, _foregroundWindow))
+            {
+                _unfilteredWindowList.RemoveAt(0);
+                _unfilteredWindowList.Add(firstWindow);
+                foregroundWindowMovedToBottom = true;
+            }
+
+            // Assign shortcut keys: 0-9, then a-z, then A-Z (up to 62)
+            if (_config.AzShortcutsEnabled)
+            {
+                for (int i = 0; i < _unfilteredWindowList.Count && i < 62; i++)
+                {
+                    if (i < 10)
+                        _unfilteredWindowList[i].ShortcutKey = i.ToString();
+                    else if (i < 36)
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('a' + (i - 10))).ToString();
+                    else
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('A' + (i - 36))).ToString();
+                }
+            }
+
+            _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
+            _windowCloser = new WindowCloser();
+
+            // Toggle multi-column layout when option is enabled
+            if (_config.MultiColumnEnabled)
+            {
+                lb.ItemsPanel = (System.Windows.Controls.ItemsPanelTemplate)FindResource("MultiColumnPanel");
+                ScrollViewer.SetVerticalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Disabled);
+                ScrollViewer.SetHorizontalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Auto);
+            }
+            else
+            {
+                lb.ItemsPanel = (System.Windows.Controls.ItemsPanelTemplate)FindResource("SingleColumnPanel");
+                ScrollViewer.SetVerticalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Auto);
+                ScrollViewer.SetHorizontalScrollBarVisibility(lb, System.Windows.Controls.ScrollBarVisibility.Disabled);
+            }
+
+            foreach (var window in _unfilteredWindowList)
+            {
+                window.FormattedTitle = new XamlHighlighter().Highlight(new[] {new StringPart(window.AppWindow.Title)});
+                window.FormattedProcessTitle =
+                    new XamlHighlighter().Highlight(new[] {new StringPart(window.AppWindow.ProcessTitle)});
+            }
+
+            lb.DataContext = null;
+            lb.DataContext = _filteredWindowList;
+
+            FocusItemInList(focus, foregroundWindowMovedToBottom);
+
+            SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
+            tb.Clear();
+            CenterWindow();
+            ScrollSelectedItemIntoView();
+
+            // Focus the list so 0-9/A-Z work immediately; / will focus the text box
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (lb.Items.Count > 0)
+                    Keyboard.Focus(lb);
+            }), DispatcherPriority.Render);
+
+            // Remember the current foreground window before we switch
+            _currentWindow = new AppWindow(SystemWindow.ForegroundWindow.HWnd);
+        }
+
+        private static bool AreWindowsRelated(SystemWindow window1, SystemWindow window2)
+        {
+            return window1.HWnd == window2.HWnd || window1.Process.Id == window2.Process.Id;
+        }
+
+        private void FocusItemInList(InitialFocus focus, bool foregroundWindowMovedToBottom)
+        {
+            if (focus == InitialFocus.PreviousItem)
+            {
+                var previousItemIndex = lb.Items.Count - 1;
+                if (foregroundWindowMovedToBottom)
+                {
+                    previousItemIndex--;
+                }
+
+                lb.SelectedIndex = previousItemIndex > 0 ? previousItemIndex : 0;
+            }
+            else
+            {
+                lb.SelectedIndex = 0;
+            }
+        }
+
+        /// <summary>
+        /// Place the Switcheroo window in the center of the screen
+        /// </summary>
+        private void CenterWindow()
+        {
+            // Reset height every time to ensure that resolution changes take effect
+            Border.MaxHeight = SystemParameters.PrimaryScreenHeight;
+
+            // Force a rendering before repositioning the window
+            SizeToContent = SizeToContent.Manual;
+            SizeToContent = SizeToContent.WidthAndHeight;
+
+            // Position the window in the center of the screen
+            Left = (SystemParameters.PrimaryScreenWidth/2) - (ActualWidth/2);
+            Top = (SystemParameters.PrimaryScreenHeight/2) - (ActualHeight/2);
+        }
+
+        /// <summary>
+        /// Switches the window associated with the selected item.
+        /// </summary>
+        private void Switch()
+        {
+            foreach (var item in lb.SelectedItems)
+            {
+                var win = (AppWindowViewModel)item;
+                ActivateAppWindow(_currentWindow, win.AppWindow, false);
+            }
+
+            HideWindow();
+        }
+
+        public void HideWindow()
+        {
+            if (_windowCloser != null)
+            {
+                _windowCloser.Dispose();
+                _windowCloser = null;
+            }
+
+            if (SizeToContent == SizeToContent.Manual)
+            {
+                _config.WindowWidth = (int)ActualWidth;
+                _config.WindowHeight = (int)ActualHeight;
+                ConfigManager.Save(_config);
+            }
+
+            _altTabAutoSwitch = false;
+            Opacity = 0;
+            Dispatcher.BeginInvoke(new Action(Hide), DispatcherPriority.Input);
+        }
+        private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (Visibility == Visibility.Visible && SizeToContent != SizeToContent.Manual)
+            {
+                SizeToContent = SizeToContent.Manual;
+            }
+        }
+        private void RestoreWindowSize()
+        {
+            if (_config.WindowWidth > 0 && _config.WindowHeight > 0)
+            {
+                Width = _config.WindowWidth;
+                Height = _config.WindowHeight;
+                SizeToContent = SizeToContent.Manual;
+            }
+            else
+            {
+                SizeToContent = SizeToContent.WidthAndHeight;
+            }
+        }
+
+        #endregion
+
+        /// =================================
+
+        #region Right-click menu functions
+
+        /// =================================
+        /// <summary>
+        /// Show Options dialog.
+        /// </summary>
+        private void Options()
+        {
+            if (_optionsWindow == null)
+            {
+                _optionsWindow = new OptionsWindow
+                {
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                };
+                _optionsWindow.Closed += (sender, args) =>
+                {
+                    _optionsWindow = null;
+                    ReloadConfig();
+                };
+                _optionsWindow.ShowDialog();
+            }
+            else
+            {
+                _optionsWindow.Activate();
+            }
+        }
+
+        /// <summary>
+        /// Show About dialog.
+        /// </summary>
+        private void About()
+        {
+            if (_aboutWindow == null)
+            {
+                _aboutWindow = new AboutWindow
+                {
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                };
+                _aboutWindow.Closed += (sender, args) => _aboutWindow = null;
+                _aboutWindow.ShowDialog();
+            }
+            else
+            {
+                _aboutWindow.Activate();
+            }
+        }
+
+        /// <summary>
+        /// Quit Switcheroo
+        /// </summary>
+        private void Quit()
+        {
+            _notifyIcon.Dispose();
+            _notifyIcon = null;
+            if (_automationServer != null)
+            {
+                _automationServer.Dispose();
+                _automationServer = null;
+            }
+            _hotkey.Dispose();
+            DisposePreviousAppHook();
+            Application.Current.Shutdown();
+        }
+
+        private void ReloadConfig()
+        {
+            _config = ConfigManager.Load();
+
+            // Refresh main activation hotkey from config.
+            if (_hotkey != null)
+            {
+                try
+                {
+                    _hotkey.LoadSettings();
+                    if (!_autoMode)
+                        _hotkey.Enabled = _config.EnableHotKey;
+                }
+                catch (HotkeyAlreadyInUseException)
+                {
+                    if (_autoMode) return;
+                    var boxText = "The current hotkey for activating Switcheroo is in use by another program." +
+                                  Environment.NewLine +
+                                  Environment.NewLine +
+                                  "You can change the hotkey by right-clicking the Switcheroo icon in the system tray and choosing 'Options'.";
+                    MessageBox.Show(boxText, "Hotkey already in use", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+
+            // Refresh previous-app low-level hook to match the (possibly changed) combo.
+            DisposePreviousAppHook();
+            if (!_autoMode && _config.PreviousAppEnabled)
+                SetUpPreviousAppLowLevelHook();
+
+            SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
+        }
+
+        #region Automation API
+
+        public void ShowAndActivate()
+        {
+            if (Visibility != Visibility.Visible)
+            {
+                tb.IsEnabled = true;
+                _foregroundWindow = SystemWindow.ForegroundWindow;
+                RestoreWindowSize();
+                Show();
+                Activate();
+                LoadData(InitialFocus.NextItem);
+                Opacity = 1;
+            }
+        }
+
+        public void SetQuery(string query)
+        {
+            if (Visibility != Visibility.Visible)
+            {
+                ShowAndActivate();
+            }
+            tb.Text = query ?? string.Empty;
+            tb.Focus();
+        }
+
+        public List<Dictionary<string, string>> GetWindowList()
+        {
+            var result = new List<Dictionary<string, string>>();
+            if (_filteredWindowList == null)
+                return result;
+
+            for (int i = 0; i < _filteredWindowList.Count; i++)
+            {
+                var vm = _filteredWindowList[i];
+                result.Add(new Dictionary<string, string>
+                {
+                    { "index", i.ToString() },
+                    { "hwnd", vm.AppWindow.HWnd.ToInt64().ToString("X") },
+                    { "title", vm.AppWindow.Title },
+                    { "process", vm.AppWindow.ProcessTitle },
+                    { "shortcut", vm.ShortcutKey ?? string.Empty }
+                });
+            }
+            return result;
+        }
+
+        public void SelectIndex(int index)
+        {
+            if (index >= 0 && index < lb.Items.Count)
+            {
+                lb.SelectedIndex = index;
+                ScrollSelectedItemIntoView();
+            }
+        }
+
+        public void ActivateSelectedWindow()
+        {
+            Switch();
+        }
+
+        public void TriggerPreviousApp()
+        {
+            previousAppHotkey_Pressed(this, EventArgs.Empty);
+        }
+
+        // ----- Test/diagnostic helpers (used by the automation API) -----
+
+        /// <summary>
+        /// Installs the previous-app low-level keyboard hook using the currently
+        /// loaded config. Intended for automated tests that run under --auto
+        /// (where the hook is otherwise not installed), so the real keystroke path
+        /// can be exercised end-to-end.
+        /// </summary>
+        public bool InstallPreviousAppHookForTest()
+        {
+            SetUpPreviousAppLowLevelHook();
+            return _previousAppHook != null && _previousAppHook.IsHookStarted;
+        }
+
+        public bool InstallActivationHotKeyForTest()
+        {
+            if (_hotkey == null)
+                return false;
+
+            _hotkey.LoadSettings();
+            _hotkey.Enabled = false;
+            _hotkey.Enabled = _config.EnableHotKey;
+            return _hotkey.Enabled;
+        }
+
+        public bool IsPreviousAppHookActive
+        {
+            get { return _previousAppHook != null; }
+        }
+
+        public bool IsActivationHotKeyActive
+        {
+            get { return _hotkey != null && _hotkey.Enabled; }
+        }
+
+        public void ResetPreviousWindow()
+        {
+            _previousWindow = null;
+        }
+
+        public Dictionary<string, string> GetForegroundInfo()
+        {
+            var fg = SystemWindow.ForegroundWindow;
+            var aw = new AppWindow(fg.HWnd);
+            return new Dictionary<string, string>
+            {
+                { "hwnd", fg.HWnd.ToInt64().ToString("X") },
+                { "title", aw.Title ?? "" },
+                { "process", aw.ProcessTitle ?? "" }
+            };
+        }
+
+        public void SetForegroundByHwnd(long hwnd)
+        {
+            var p = IntPtr.Size == 8 ? new IntPtr(hwnd) : new IntPtr((int)hwnd);
+            WinApi.ForceSwitchToWindow(p);
+        }
+
+        public int GetSelectedIndex()
+        {
+            return lb.SelectedIndex;
+        }
+
+        public void TriggerAltTabForTest(bool shiftDown, bool ctrlDown)
+        {
+            AltTabPressed(this, new AltTabHookEventArgs
+            {
+                ShiftDown = shiftDown,
+                CtrlDown = ctrlDown,
+                Handled = false
+            });
+        }
+
+        public Dictionary<string, string> GetPreviousAppState()
+        {
+            return new Dictionary<string, string>
+            {
+                { "hookActive", (_previousAppHook != null).ToString().ToLowerInvariant() },
+                { "hookStarted", (_previousAppHook != null && _previousAppHook.IsHookStarted).ToString().ToLowerInvariant() },
+                { "prevHwnd", _previousWindow == null ? "" : _previousWindow.HWnd.ToInt64().ToString("X") },
+                { "currentHwnd", _currentWindow == null ? "" : _currentWindow.HWnd.ToInt64().ToString("X") }
+            };
+        }
+
+        public void ApplyConfig(string configJson)
+        {
+            try
+            {
+                var path = SwitcherooConfig.ConfigPath;
+                var dir = SwitcherooConfig.ConfigDirectory;
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(path, configJson, Encoding.UTF8);
+                ReloadConfig();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("ApplyConfig failed: " + ex);
+                throw;
+            }
+        }
+
+        public string GetConfigJson()
+        {
+            try
+            {
+                return File.ReadAllText(SwitcherooConfig.ConfigPath);
+            }
+            catch
+            {
+                return "{}";
+            }
+        }
+
+        #endregion
+
+        private void MenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = new System.Windows.Controls.ContextMenu();
+
+            var optionsItem = new System.Windows.Controls.MenuItem { Header = "Options" };
+            optionsItem.Click += (s, ev) => Options();
+            menu.Items.Add(optionsItem);
+
+            var runOnStartupItem = new System.Windows.Controls.MenuItem { Header = "Run on Startup", IsCheckable = true };
+            runOnStartupItem.IsChecked = new AutoStart().IsEnabled;
+            runOnStartupItem.Click += (s, ev) =>
+            {
+                try
+                {
+                    var autoStart = new AutoStart { IsEnabled = runOnStartupItem.IsChecked };
+                    runOnStartupItem.IsChecked = autoStart.IsEnabled;
+                }
+                catch (AutoStartException ex)
+                {
+                    MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            };
+            menu.Items.Add(runOnStartupItem);
+
+            var aboutItem = new System.Windows.Controls.MenuItem { Header = "About" };
+            aboutItem.Click += (s, ev) => About();
+            menu.Items.Add(aboutItem);
+
+            menu.Items.Add(new System.Windows.Controls.Separator());
+
+            var exitItem = new System.Windows.Controls.MenuItem { Header = "Exit" };
+            exitItem.Click += (s, ev) => Quit();
+            menu.Items.Add(exitItem);
+
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.PlacementTarget = (UIElement)sender;
+            menu.IsOpen = true;
+        }
+
+        /// =================================
+
+        #endregion
+
+        #region Event Handlers
+
+        /// =================================
+        private void OnClose(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            e.Cancel = true;
+            HideWindow();
+        }
+
+        private void hotkey_HotkeyPressed(object sender, EventArgs e)
+        {
+            var cfg = ConfigManager.Load();
+            if (!cfg.EnableHotKey)
+            {
+                return;
+            }
+
+            if (Visibility != Visibility.Visible)
+            {
+                tb.IsEnabled = true;
+
+                _foregroundWindow = SystemWindow.ForegroundWindow;
+                RestoreWindowSize();
+                Show();
+                Activate();
+                LoadData(InitialFocus.NextItem);
+                Opacity = 1;
+            }
+            else
+            {
+                HideWindow();
+            }
+        }
+
+        private void AltTabPressed(object sender, AltTabHookEventArgs e)
+        {
+            var cfg = ConfigManager.Load();
+            if (!cfg.AltTabHook)
+            {
+                // Ignore Alt+Tab presses if the hook is not activated by the user
+                return;
+            }
+
+            _foregroundWindow = SystemWindow.ForegroundWindow;
+
+            if (_foregroundWindow.ClassName == "MultitaskingViewFrame")
+            {
+                // If Windows' task switcher is on the screen then don't do anything
+                return;
+            }
+
+            e.Handled = true;
+
+            if (Visibility != Visibility.Visible)
+            {
+                tb.IsEnabled = true;
+
+                ActivateAndFocusMainWindow();
+
+                if (e.ShiftDown)
+                {
+                    LoadData(InitialFocus.PreviousItem);
+                }
+                else
+                {
+                    LoadData(InitialFocus.NextItem);
+                }
+
+                if (cfg.AutoSwitch && !e.CtrlDown)
+                {
+                    _altTabAutoSwitch = true;
+                    tb.IsEnabled = false;
+                    tb.Text = "Press Alt + S to search";
+                }
+
+                RestoreWindowSize();
+                Opacity = 1;
+            }
+            else
+            {
+                if (e.ShiftDown)
+                {
+                    PreviousItem();
+                }
+                else
+                {
+                    NextItem();
+                }
+            }
+        }
+
+        private void ActivateAndFocusMainWindow()
+        {
+            // What happens below looks a bit weird, but for Switcheroo to get focus when using the Alt+Tab hook,
+            // it is needed to simulate an Alt keypress will bring Switcheroo to the foreground. Otherwise Switcheroo
+            // will become the foreground window, but the previous window will retain focus, and receive keep getting
+            // the keyboard input.
+            // http://www.codeproject.com/Tips/76427/How-to-bring-window-to-top-with-SetForegroundWindo
+
+            var thisWindowHandle = new WindowInteropHelper(this).Handle;
+            var thisWindow = new AppWindow(thisWindowHandle);
+
+            var altKey = new KeyboardKey(Keys.Alt);
+            var altKeyPressed = false;
+
+            // Press the Alt key if it is not already being pressed
+            if ((altKey.AsyncState & 0x8000) == 0)
+            {
+                altKey.Press();
+                altKeyPressed = true;
+            }
+
+            // Bring the Switcheroo window to the foreground
+            Show();
+            SystemWindow.ForegroundWindow = thisWindow;
+            Activate();
+
+            // Release the Alt key if it was pressed above
+            if (altKeyPressed)
+            {
+                altKey.Release();
+            }
+        }
+
+        private void TextChanged(object sender, TextChangedEventArgs args)
+        {
+            if (!tb.IsEnabled)
+            {
+                return;
+            }
+
+            var query = tb.Text;
+
+            var context = new WindowFilterContext<AppWindowViewModel>
+            {
+                Windows = _unfilteredWindowList,
+                ForegroundWindowProcessTitle = new AppWindow(_foregroundWindow.HWnd).ProcessTitle
+            };
+
+            var filterResults = new WindowFilterer().Filter(context, query).ToList();
+
+            foreach (var filterResult in filterResults)
+            {
+                filterResult.AppWindow.FormattedTitle =
+                    GetFormattedTitleFromBestResult(filterResult.WindowTitleMatchResults);
+                filterResult.AppWindow.FormattedProcessTitle =
+                    GetFormattedTitleFromBestResult(filterResult.ProcessTitleMatchResults);
+            }
+
+            _filteredWindowList = new ObservableCollection<AppWindowViewModel>(filterResults.Select(r => r.AppWindow));
+            lb.DataContext = _filteredWindowList;
+            if (lb.Items.Count > 0)
+            {
+                lb.SelectedItem = lb.Items[0];
+            }
+        }
+
+        private static string GetFormattedTitleFromBestResult(IList<MatchResult> matchResults)
+        {
+            var bestResult = matchResults.FirstOrDefault(r => r.Matched) ?? matchResults.First();
+            return new XamlHighlighter().Highlight(bestResult.StringParts);
+        }
+
+        private void OnEnterPressed(object sender, ExecutedRoutedEventArgs e)
+        {
+            Switch();
+            e.Handled = true;
+        }
+
+        private void ListBoxItem_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            Switch();
+            e.Handled = true;
+        }
+
+        private async void CloseWindow(object sender, ExecutedRoutedEventArgs e)
+        {
+            var windows = lb.SelectedItems.Cast<AppWindowViewModel>().ToList();
+            foreach (var win in windows)
+            {
+                bool isClosed = await _windowCloser.TryCloseAsync(win);
+                if(isClosed)
+                    RemoveWindow(win);
+            }
+
+            if (lb.Items.Count == 0)
+                HideWindow();
+
+            e.Handled = true;
+        }
+
+        private void RemoveWindow(AppWindowViewModel window)
+        {
+            int index = _filteredWindowList.IndexOf(window);
+            if (index < 0)
+                return;
+
+            if (lb.SelectedIndex == index)
+            {
+                if (_filteredWindowList.Count > index + 1)
+                    lb.SelectedIndex++;
+                else
+                {
+                    if (index > 0)
+                        lb.SelectedIndex--;
+                }
+            }
+
+            _filteredWindowList.Remove(window);
+            _unfilteredWindowList.Remove(window);
+        }
+
+        private void ScrollListUp(object sender, ExecutedRoutedEventArgs e)
+        {
+            PreviousItem();
+            e.Handled = true;
+        }
+
+        private void PreviousItem()
+        {
+            if (lb.Items.Count > 0)
+            {
+                if (lb.SelectedIndex != 0)
+                {
+                    lb.SelectedIndex--;
+                }
+                else
+                {
+                    lb.SelectedIndex = lb.Items.Count - 1;
+                }
+
+                ScrollSelectedItemIntoView();
+            }
+        }
+
+        private void ScrollListDown(object sender, ExecutedRoutedEventArgs e)
+        {
+            NextItem();
+            e.Handled = true;
+        }
+
+        private void NextItem()
+        {
+            if (lb.Items.Count > 0)
+            {
+                if (lb.SelectedIndex != lb.Items.Count - 1)
+                {
+                    lb.SelectedIndex++;
+                }
+                else
+                {
+                    lb.SelectedIndex = 0;
+                }
+
+                ScrollSelectedItemIntoView();
+            }
+        }
+
+        private void ScrollSelectedItemIntoView()
+        {
+            var selectedItem = lb.SelectedItem;
+            if (selectedItem != null)
+            {
+                lb.ScrollIntoView(selectedItem);
+            }
+        }
+
+        private void MainWindow_OnLostFocus(object sender, EventArgs e)
+        {
+            HideWindow();
+        }
+
+        private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
+        {
+            DisableSystemMenu();
+        }
+
+        private void DisableSystemMenu()
+        {
+            var windowHandle = new WindowInteropHelper(this).Handle;
+            var window = new SystemWindow(windowHandle);
+            window.Style = window.Style & ~WindowStyleFlags.SYSMENU;
+        }
+
+        private void ShowHelpTextBlock_OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            SetHelpPanelExpanded(!_isHelpPanelExpanded, true);
+        }
+        private void SetHelpPanelExpanded(bool expanded, bool animate)
+        {
+            _isHelpPanelExpanded = expanded;
+            var newHeight = expanded ? 17 : 0;
+
+            if (!animate)
+            {
+                HelpPanel.BeginAnimation(HeightProperty, null);
+                HelpPanel.Height = newHeight;
+                return;
+            }
+
+            var duration = new Duration(TimeSpan.FromSeconds(0.150));
+            HelpPanel.BeginAnimation(HeightProperty, new DoubleAnimation(HelpPanel.ActualHeight, newHeight, duration));
+        }
+
+        #endregion
+
+        private enum InitialFocus
+        {
+            NextItem,
+            PreviousItem
+        }
+    }
+}
