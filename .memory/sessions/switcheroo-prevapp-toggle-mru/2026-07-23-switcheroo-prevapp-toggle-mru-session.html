@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ai-read-order" content="appendix-first">
+<meta name="ai-primary-section" content="#appendix">
+<!-- AI-AGENT: Read #appendix (verbatim digest) first. Illustrated sections are optional skim. -->
+<title>Switcheroo+ previous-app toggle &amp; MRU sorting — session knowledge (2026-07-23)</title>
+<style>
+:root {
+  --ivory: #faf9f5;
+  --slate: #141413;
+  --clay: #d97757;
+  --oat: #e3dacc;
+  --olive: #788c5d;
+  --rust: #b04a3f;
+  --gray-150: #f0eee6;
+  --gray-300: #d1cfc5;
+  --gray-500: #87867f;
+  --gray-700: #3d3d3a;
+  --white: #ffffff;
+  --radius-panel: 12px;
+  --serif: ui-serif, Georgia, "Times New Roman", serif;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--ivory);
+  color: var(--gray-700);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  margin: 0;
+  padding: 0 1rem 4rem;
+}
+main { max-width: 980px; margin: 0 auto; }
+h1 {
+  color: var(--slate);
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  margin: 1.5rem 0 0.25rem;
+}
+h2 {
+  color: var(--slate);
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.35rem;
+  margin: 2rem 0 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--gray-300);
+}
+h3 { color: var(--slate); font-size: 1.02rem; margin: 1.2rem 0 0.4rem; }
+.meta { font: 0.8rem var(--mono); color: var(--gray-500); margin-bottom: 1rem; }
+code, pre { font-family: var(--mono); }
+code { background: var(--gray-150); padding: 0 4px; border-radius: 3px; font-size: 0.88em; }
+pre {
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+table { border-collapse: collapse; width: 100%; background: var(--white); font-size: 0.9rem; }
+th, td { border: 1.5px solid var(--gray-300); padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+th { background: var(--gray-150); color: var(--slate); font-weight: 600; }
+td code { background: var(--gray-150); }
+
+.ai-read-order {
+  font: 0.78rem/1.4 var(--mono);
+  color: var(--gray-500);
+  padding: 0.4rem 0;
+  margin: 0 0 0.75rem;
+  border-bottom: 1px solid var(--gray-300);
+}
+.ai-read-order a { color: var(--clay); }
+.ai-read-order strong { color: var(--slate); font-weight: 600; }
+
+nav.toc-bar {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  font: 0.75rem/1.3 var(--mono);
+  padding: 0.35rem 0.6rem;
+  margin: 0 0 1rem;
+  background: var(--gray-150);
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+}
+nav.toc-bar .toc-bar-label { color: var(--gray-500); margin-right: 0.25rem; }
+nav.toc-bar a {
+  color: var(--gray-700);
+  text-decoration: none;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+}
+nav.toc-bar a:hover { color: var(--clay); border-color: var(--clay); }
+
+.tldr {
+  background: var(--slate);
+  color: var(--ivory);
+  border-radius: var(--radius-panel);
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+.tldr p { margin: 0.3rem 0; }
+.tldr code { background: rgba(255,255,255,0.12); color: var(--ivory); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+.chip {
+  font: 0.72rem var(--mono);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--gray-300);
+  background: var(--oat);
+  color: var(--slate);
+}
+.chip.ok { background: var(--olive); color: var(--white); border-color: var(--olive); }
+.chip.warn { background: var(--rust); color: var(--white); border-color: var(--rust); }
+
+.timeline { list-style: none; padding: 0; margin: 0; }
+.timeline li {
+  position: relative;
+  padding: 0.35rem 0 0.35rem 1.6rem;
+  border-left: 2px solid var(--gray-300);
+  margin-left: 0.45rem;
+}
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 0.75rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--oat);
+  border: 1.5px solid var(--clay);
+}
+.timeline li.done::before { background: var(--olive); border-color: var(--olive); }
+.timeline li.blocked::before { background: var(--rust); border-color: var(--rust); }
+.timeline .t-label { font: 0.72rem var(--mono); color: var(--gray-500); display: block; }
+
+.diagram pre { font-size: 0.85rem; line-height: 1.55; color: var(--slate); }
+.diagram pre mark, .diagram pre .callout {
+  background: var(--oat);
+  color: var(--slate);
+  padding: 0 3px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+details { margin: 0.5rem 0; }
+details summary {
+  cursor: pointer;
+  font: 0.85rem var(--mono);
+  color: var(--slate);
+  padding: 0.35rem 0.6rem;
+  background: var(--gray-150);
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+}
+details[open] summary { border-radius: 6px 6px 0 0; }
+details .details-body {
+  border: 1px solid var(--gray-300);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  padding: 0.6rem 0.8rem;
+  background: var(--white);
+}
+.prompt-body { white-space: pre-wrap; font-size: 0.88rem; color: var(--gray-700); margin: 0; }
+
+.panel {
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-panel);
+  padding: 0.9rem 1.1rem;
+  margin: 0.8rem 0;
+}
+.panel.attention { border-left: 4px solid var(--rust); }
+.panel.note { border-left: 4px solid var(--clay); }
+
+section.ai-understanding-digest pre {
+  background: var(--gray-150);
+  font-size: 0.8rem;
+  max-height: none;
+}
+ul.tight li { margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<aside class="ai-read-order" aria-label="Read order for AI agents" data-reader="ai">
+  <strong>For AI:</strong> Read <a href="#appendix">Appendix — understanding digest</a> first; skip full-page scan unless you need tables or diagrams.
+</aside>
+
+<main>
+<h1>Switcheroo+ — previous-app toggle &amp; MRU window sorting</h1>
+<div class="meta">Session date: 2026-07-23 &nbsp;·&nbsp; Slug: <code>switcheroo-prevapp-toggle-mru</code> &nbsp;·&nbsp; Repo: <code>G:/github/switcheroo_plus</code></div>
+
+<nav class="toc-bar" aria-label="Section index">
+  <span class="toc-bar-label">Sections</span>
+  <a href="#tldr">TL;DR</a>
+  <a href="#user-prompts">User prompts</a>
+  <a href="#timeline">Timeline</a>
+  <a href="#root-causes">Root causes</a>
+  <a href="#flow">Hotkey flow</a>
+  <a href="#sorting">Sorting</a>
+  <a href="#pending">Pending</a>
+  <a href="#key-paths">Key paths</a>
+  <a href="#glossary">Glossary</a>
+  <a href="#appendix">Appendix</a>
+</nav>
+
+<section id="tldr">
+<h2>TL;DR</h2>
+<div class="tldr">
+  <p>The back/forth app toggle was broken by <strong>three stacked causes</strong>: the feature was disabled in config, <code>SwitchToThisWindow</code> was denied by the Windows foreground lock, and the switch ran synchronously inside the low-level keyboard hook callback where <code>SetForegroundWindow</code> is also denied. All three were fixed and wired to <strong>Ctrl+Shift+Q</strong>.</p>
+  <p>The overlay window list is now ordered: <strong>most-recently-used first</strong> (tracked by a 500&nbsp;ms foreground poll), everything else <strong>alphabetically by process then title</strong> — stable between invocations. Build is clean, 41/41 unit tests pass, the new Debug build is running.</p>
+  <div class="chips">
+    <span class="chip ok">toggle fixed (pipe-verified)</span>
+    <span class="chip ok">sorting verified live</span>
+    <span class="chip">config: Ctrl+Shift+Q, VK 81</span>
+    <span class="chip warn">live keystroke E2E unverified (machine locked)</span>
+    <span class="chip warn">commit / Release Alt+Tab / .log relocation pending</span>
+  </div>
+</div>
+</section>
+
+<section id="user-prompts">
+<h2>User prompts (verbatim)</h2>
+<details open>
+  <summary>Prompt 1 (first prompt) — fix back/forth toggle + sort the list</summary>
+  <div class="details-body"><pre class="prompt-body">I want you to fxi the problem that it's feature of swtch back/forth of apps cant's work, now registered the hot key as Ctrl+Shift+Q.
+
+Since it replaced the Alt+Tab system hotkey, Alt+Tab cant work like the origin. but the origin Alt+Tab can switch back and forth.
+
+You may or may not need to use the system feature, or you can remember the switch between switcheroo itself, then when hot key pressed, switch using that record. But if you can find a way to use the system feature is also acceptable.
+
+The goal is to fix it's hot key so  that I can switch back and forth.
+
+MOre: the apps in the list are all in a messy, I want you to sort it base on some standard, it maybe that the hotest recent apps are on top, but I dont know how to get the hotest apps. and the other , should be sorted in some way that dont mess them up each time I open the window</pre></div>
+</details>
+<details>
+  <summary>Prompt 2 — commit, Release Alt+Tab broken, log files at root</summary>
+  <div class="details-body"><pre class="prompt-body">git commit what has changed according to the content. fix another prolems, I build with build.bat with release config, but the built exe cant even correctly register the alt+tab shotcut, I press it, the main window not pop up.
+
+More , there a lots of .log files generate aht the root, it should generate to the .log</pre></div>
+</details>
+<details>
+  <summary>Prompt 3 — save session knowledge via command file</summary>
+  <div class="details-body"><pre class="prompt-body">use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge</pre></div>
+</details>
+</section>
+
+<section id="timeline">
+<h2>Timeline</h2>
+<ul class="timeline">
+  <li class="done"><span class="t-label">explore</span>Codebase explored — the previous-app feature already existed (<code>PreviousAppHook</code>, Options UI, E2E script); it was simply <strong>disabled in config</strong> and bound to Ctrl+Shift+E.</li>
+  <li class="done"><span class="t-label">config</span><code>config.jsonc</code>: <code>PreviousAppEnabled=true</code>, <code>PreviousAppHotKey=81</code> (Q).</li>
+  <li class="done"><span class="t-label">sorting</span>MRU tracking (500&nbsp;ms foreground poll + switch records) and stable alphabetical fallback implemented in <code>LoadData</code>.</li>
+  <li class="done"><span class="t-label">build</span>Solution rebuilt (VS2022 MSBuild, Debug); NUnit <strong>41/41 passed</strong>; old instance (PID 76164) replaced with the new build.</li>
+  <li class="done"><span class="t-label">verify 1</span>Pipe toggle <code>previousapp</code> worked both directions (VS ↔ Total Commander). Injected <strong>Ctrl+Shift+Q did not switch</strong> — hook fired (bookkeeping changed) but foreground stayed.</li>
+  <li class="done"><span class="t-label">root cause 2</span>Foreground lock denial → wired existing <code>WinApi.ForceSwitchToWindow</code> into <code>ActivateAppWindow</code> via new <code>AppWindow.ForceSwitchToLastVisibleActivePopup()</code>. First press then worked (TC → VS), toggle-back still failed.</li>
+  <li class="done"><span class="t-label">root cause 3</span>Pipe <code>previousapp</code> with freshly injected F24 input still worked → input recency was not the blocker; the <strong>hook-callback context</strong> was. Fix: handler now defers with <code>Dispatcher.BeginInvoke(TogglePreviousApp)</code>.</li>
+  <li class="done"><span class="t-label">verify 2</span>Sorting verified live via <code>show</code> + <code>getwindows</code>: Total Commander (just used) at index 0, untracked windows alphabetical, foreground at bottom.</li>
+  <li class="blocked"><span class="t-label">blocked</span>Final live Ctrl+Shift+Q E2E: <strong>machine locked itself</strong> (foreground = LockApp); LL hooks don't fire on the secure desktop. Left for the user to confirm.</li>
+  <li class="blocked"><span class="t-label">pending</span>Prompt-2 work started (read <code>build.bat</code>, <code>git status</code>: 3 modified files) but commit / Release Alt+Tab / <code>.log</code> relocation were <strong>not finished</strong> when the session-save was requested.</li>
+</ul>
+</section>
+
+<section id="root-causes">
+<h2>Root causes — problem vs cause vs fix vs status</h2>
+<table>
+  <tr><th scope="col">Symptom</th><th scope="col">Root cause</th><th scope="col">Fix</th><th scope="col">Status</th></tr>
+  <tr>
+    <td>Back/forth hotkey dead</td>
+    <td>1. <code>PreviousAppEnabled: false</code> in config; key was Ctrl+Shift+E (69)</td>
+    <td>config: enabled, VK 81 (Q)</td>
+    <td>verified (hook active via <code>prevstate</code>)</td>
+  </tr>
+  <tr>
+    <td>Hook fires, no switch</td>
+    <td>2. <code>SwitchToThisWindow</code> denied by foreground lock when another app had the most recent input</td>
+    <td><code>ForceSwitchToLastVisibleActivePopup()</code> → <code>WinApi.ForceSwitchToWindow</code> (AttachThreadInput)</td>
+    <td>verified (press switched TC → VS)</td>
+  </tr>
+  <tr>
+    <td>Switch still dead from keystroke only</td>
+    <td>3. Handler ran synchronously inside the <code>WH_KEYBOARD_LL</code> callback; <code>SetForegroundWindow</code> denied while the keystroke is being processed</td>
+    <td><code>Dispatcher.BeginInvoke(TogglePreviousApp)</code>; pipe path calls <code>TogglePreviousApp()</code> directly</td>
+    <td>pipe-level verified; live keystroke E2E blocked (machine locked)</td>
+  </tr>
+  <tr>
+    <td>Window list "messy"</td>
+    <td><code>LoadData</code> used raw <code>EnumWindows</code> Z-order — reshuffles constantly</td>
+    <td>MRU first (500&nbsp;ms foreground poll + switch records), rest alphabetical by process/title; foreground moved to bottom</td>
+    <td>verified live via <code>getwindows</code></td>
+  </tr>
+  <tr>
+    <td>Release exe: Alt+Tab doesn't open overlay</td>
+    <td>Likely <code>AltTabHook: false</code> in config and/or single-instance mutex conflict with the running Debug instance</td>
+    <td>not yet applied</td>
+    <td>pending</td>
+  </tr>
+  <tr>
+    <td><code>InternalTrace.*.log</code> at repo root</td>
+    <td>NUnit console internal trace writes to the current working directory</td>
+    <td>not yet applied (target: <code>.log/</code> dir)</td>
+    <td>pending</td>
+  </tr>
+</table>
+</section>
+
+<section id="flow">
+<h2>Hotkey flow — where the denial happened</h2>
+<figure class="diagram">
+<pre>
+ physical / injected Ctrl+Shift+Q
+        │
+        ▼
+┌─────────────────────────────┐
+│ PreviousAppHook             │  WH_KEYBOARD_LL, exact modifier match
+│ (Switcheroo/PreviousAppHook │  via KeyboardKey.AsyncState; swallows
+│  .cs)                       │  the keystroke (handled = true)
+└─────────────┬───────────────┘
+              │ Pressed event — fires <mark>inside the hook callback</mark>
+              ▼
+┌─────────────────────────────┐
+│ previousAppHotkey_Pressed   │  OLD: switched right here → SetForegroundWindow
+│ (MainWindow.xaml.cs)        │  <mark>denied while keystroke still processing</mark>
+│                             │  NEW: Dispatcher.BeginInvoke(TogglePreviousApp)
+└─────────────┬───────────────┘
+              ▼ (after callback returns)
+┌─────────────────────────────┐
+│ TogglePreviousApp           │  tracked _previousWindow alive? → toggle
+│                             │  else walk Z-order (GW_HWNDNEXT), skip self
+└─────────────┬───────────────┘
+              ▼
+┌─────────────────────────────┐
+│ ActivateAppWindow           │  records _previousWindow/_currentWindow,
+│                             │  RecordWindowUsed (MRU), then:
+│                             │  OLD: SwitchToThisWindow → <mark>denied by foreground
+│                             │  lock</mark> (other app had most recent input)
+│                             │  NEW: ForceSwitchToLastVisibleActivePopup →
+│                             │  WinApi.ForceSwitchToWindow (AttachThreadInput)
+└─────────────────────────────┘
+</pre>
+<figcaption class="meta">Three stacked causes; each layer only became visible after the previous one was fixed.</figcaption>
+</figure>
+</section>
+
+<section id="sorting">
+<h2>Window list ordering (new)</h2>
+<table>
+  <tr><th scope="col">Tier</th><th scope="col">Source</th><th scope="col">Order</th></tr>
+  <tr><td>1. Recent apps (top)</td><td><code>_mruWindowHandles</code> — 500&nbsp;ms foreground poll + every <code>ActivateAppWindow</code>, cap 50, front = most recent</td><td>by recency</td></tr>
+  <tr><td>2. Everything else</td><td>never-activated windows</td><td>alphabetical: <code>ProcessTitle</code>, then <code>Title</code> (CurrentCultureIgnoreCase) — stable between invocations</td></tr>
+  <tr><td>3. Foreground window</td><td><code>AreWindowsRelated</code> match (HWND or PID)</td><td>moved to the <strong>bottom</strong>, so Enter switches straight to the previous app</td></tr>
+</table>
+<div class="panel note">
+  <strong>Verified live:</strong> after toggling to Total Commander it appeared at index 0; untracked windows listed ChatGPT → chrome → cmd → EmEditor → Evernote → Everything → GitExtensions → … strictly alphabetical. MRU is <strong>in-memory only</strong>: after an app restart the list starts alphabetical and re-learns within seconds.
+</div>
+</section>
+
+<section id="pending">
+<h2>Pending work (Prompt 2, not finished at save time)</h2>
+<div class="panel attention">
+<ul class="tight">
+  <li><strong>Git commit</strong> — modified: <code>AGENTS.md</code>, <code>Core/AppWindow.cs</code>, <code>Switcheroo/MainWindow.xaml.cs</code>. Untracked: <code>.memory/sessions/switcheroo-revert-backup/</code>, <code>.temp/</code> (decide ignore vs commit).</li>
+  <li><strong>Release Alt+Tab</strong> — check: (a) <code>AltTabHook: false</code> in config makes <code>AltTabPressed</code> return early; (b) Debug instance still running → Release exe may exit silently on the single-instance mutex. Set <code>AltTabHook: true</code> and ensure one instance.</li>
+  <li><strong>Log files</strong> — <code>InternalTrace.*.log</code> at repo root are written by the NUnit console runner into its CWD; redirect to a <code>.log/</code> directory (runner flag, wrapper script, or <code>.gitignore</code> at minimum).</li>
+</ul>
+</div>
+</section>
+
+<section id="key-paths">
+<h2>Key paths / commands</h2>
+<table>
+  <tr><th scope="col">What</th><th scope="col">Path / command</th></tr>
+  <tr><td>Config file</td><td><code>%USERPROFILE%\.config\.switcheroo_plus\config.jsonc</code></td></tr>
+  <tr><td>Toggle hotkey hook</td><td><code>Switcheroo/PreviousAppHook.cs</code></td></tr>
+  <tr><td>Toggle handler + MRU + sorting</td><td><code>Switcheroo/MainWindow.xaml.cs</code> (<code>TogglePreviousApp</code>, <code>ActivateAppWindow</code>, <code>SetUpForegroundTracking</code>, <code>LoadData</code>)</td></tr>
+  <tr><td>Force switch primitive</td><td><code>Core/WinApi.cs</code> → <code>ForceSwitchToWindow</code>; <code>Core/AppWindow.cs</code> → <code>ForceSwitchToLastVisibleActivePopup</code></td></tr>
+  <tr><td>Automation pipe</td><td><code>switcheroo_plus_automation</code> — actions: ping, getconfig, getforeground, setforeground, previousapp, prevstate, resetprevwindow, show, hide, getwindows, exit</td></tr>
+  <tr><td>Build</td><td><code>build.bat</code> or VS2022 Community MSBuild → <code>Switcheroo.sln /p:Configuration=Debug|Release</code></td></tr>
+  <tr><td>Tests</td><td><code>packages/NUnit.ConsoleRunner.3.17.0/tools/nunit3-console.exe Core.UnitTests/bin/Debug/Switcheroo.Core.UnitTests.dll</code> — 41/41 passed</td></tr>
+  <tr><td>Exe under test</td><td><code>Switcheroo/bin/Debug/switcheroo_plus.exe</code></td></tr>
+  <tr><td>E2E scripts</td><td><code>AutomationTests/Test-PreviousAppHook.ps1</code>, <code>Test-Hotkeys.ps1</code>, <code>Run-AutomationTests.ps1</code></td></tr>
+</table>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<details>
+  <summary>Terms</summary>
+  <div class="details-body">
+    <ul class="tight">
+      <li><strong>WH_KEYBOARD_LL</strong> — global low-level keyboard hook; the callback runs on the installing thread's message loop and must return fast.</li>
+      <li><strong>Foreground lock</strong> — Windows restriction: <code>SetForegroundWindow</code> is denied unless the caller meets criteria (e.g. received the last input, or lock timeout expired). <code>AttachThreadInput</code> to the foreground thread shares its input state and is the documented workaround.</li>
+      <li><strong>MRU</strong> — most recently used; here a HWND list fed by a 500&nbsp;ms foreground poll and by every switcheroo-initiated switch.</li>
+      <li><strong>Z-order</strong> — window stacking order from <code>EnumWindows</code>; top = most recently active. The old list order.</li>
+      <li><strong>Secure desktop</strong> — the lock/sign-in screen desktop; LL hooks installed on the default desktop do not fire there.</li>
+      <li><strong>VK 81 / 0x51</strong> — virtual-key code for <strong>Q</strong>.</li>
+    </ul>
+  </div>
+</details>
+</section>
+
+<section id="appendix" class="ai-understanding-digest" data-reader="ai" aria-label="Verbatim understanding digest for AI">
+<h2>Appendix — understanding digest (read by AI)</h2>
+<p class="meta">This block is the verbatim Phase-1 Markdown for replay; the body above is the simplified illustrated view. The same digest is kept at <code>.temp/session-knowledge/2026-07-23-switcheroo-prevapp-toggle-mru-understanding.md</code>.</p>
+<pre><code class="language-markdown"># Understanding digest — switcheroo-prevapp-toggle-mru (2026-07-23)
+
+## User prompts (verbatim)
+
+### Prompt 1 (first prompt)
+```text
+I want you to fxi the problem that it's feature of swtch back/forth of apps cant's work, now registered the hot key as Ctrl+Shift+Q.
+
+Since it replaced the Alt+Tab system hotkey, Alt+Tab cant work like the origin. but the origin Alt+Tab can switch back and forth.
+
+You may or may not need to use the system feature, or you can remember the switch between switcheroo itself, then when hot key pressed, switch using that record. But if you can find a way to use the system feature is also acceptable.
+
+The goal is to fix it's hot key so  that I can switch back and forth.
+
+MOre: the apps in the list are all in a messy, I want you to sort it base on some standard, it maybe that the hotest recent apps are on top, but I dont know how to get the hotest apps. and the other , should be sorted in some way that dont mess them up each time I open the window
+```
+
+### Prompt 2
+```text
+git commit what has changed according to the content. fix another prolems, I build with build.bat with release config, but the built exe cant even correctly register the alt+tab shotcut, I press it, the main window not pop up.
+
+More , there a lots of .log files generate aht the root, it should generate to the .log
+```
+
+### Prompt 3
+```text
+use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge
+```
+
+## Trigger
+- Switcheroo+ (WPF Alt+Tab replacement, repo `G:/github/switcheroo_plus`): the previous-app back/forth toggle hotkey did nothing. User wants it on Ctrl+Shift+Q.
+- Window list in the overlay was in "messy" raw Z-order; user wants recent apps on top and a stable order for the rest.
+- Follow-up (unfinished at save time): commit changes; Release build via `build.bat` does not open overlay on Alt+Tab; `InternalTrace.*.log` files pollute repo root and should go under a `.log` dir.
+
+## Evidence
+- `%USERPROFILE%\.config\.switcheroo_plus\config.jsonc` had `"PreviousAppEnabled": false`, `"PreviousAppHotKey": 69` (Ctrl+Shift+E), `"AltTabHook": false`.
+- The previous-app feature already existed in code: `Switcheroo/PreviousAppHook.cs` (WH_KEYBOARD_LL, exact-modifier match via `KeyboardKey.AsyncState`), `MainWindow.previousAppHotkey_Pressed`, config fields, Options UI, and `AutomationTests/Test-PreviousAppHook.ps1`.
+- `WinApi.ForceSwitchToWindow` (AttachThreadInput-based) existed but was only used by the automation `setforeground` action; the previous-app path used `SwitchToThisWindow`.
+- Automation named pipe `switcheroo_plus_automation` with actions: ping, show, hide, setquery, getwindows, select, activate, previousapp, installprevhook, installmainhotkey, resetprevwindow, getforeground, setforeground, prevstate, setconfig, getconfig, exit.
+- `prevstate` after a failed injected Ctrl+Shift+Q showed `prevHwnd`/`currentHwnd` bookkeeping HAD mutated -&gt; hook fired, handler ran, but the actual foreground window never changed.
+- Machine locked itself during the final E2E run (foreground = LockApp "Windows default lock screen"); LL hooks do not fire on the secure desktop, so keystroke-level verification of the last fix was deferred to the user.
+
+## Model
+- Three hotkey paths: (a) `RegisterHotKey` activation hotkey (Ctrl+Shift+Z, VK 122) -&gt; show overlay; (b) `AltTabHook` LL hook for Alt+Tab interception; (c) `PreviousAppHook` LL hook, generic modifier+VK combo -&gt; toggle to previous window without overlay.
+- Toggle flow: `PreviousAppHook.Pressed` -&gt; `previousAppHotkey_Pressed` -&gt; (tracked `_previousWindow` alive and != current ? toggle : walk Z-order with `GW_HWNDNEXT` skipping self and non-`IsAltTabWindow()`) -&gt; `ActivateAppWindow` -&gt; `SwitchToLastVisibleActivePopup` -&gt; `WinApi.SwitchToThisWindow` (old) / `WinApi.ForceSwitchToWindow` (new).
+- List flow: `LoadData` -&gt; `WindowFinder.GetWindows()` (EnumWindows Z-order) -&gt; `AppWindowViewModel` list -&gt; sort -&gt; `ObservableCollection` -&gt; ListBox; `WindowFilterer` re-sorts by match score only when a query is typed (stable for empty query).
+- Config: JSONC at `%USERPROFILE%\.config\.switcheroo_plus\config.jsonc`, hand-rolled parser/writer in `Switcheroo/Config.cs`; legacy `Properties.Settings` only used for one-time migration.
+
+## Hypothesis -&gt; verification
+- H1 "feature disabled in config": CONFIRMED. `PreviousAppEnabled: false` meant the LL hook was never installed.
+- H2 "`SwitchToThisWindow` denied by the foreground lock when another app had the most recent input": CONFIRMED. Pipe action `previousapp` (no recent input) toggled both directions; injected Ctrl+Shift+Q did not switch. After switching to `ForceSwitchToWindow`, the first press (Total Commander -&gt; VS) worked.
+- H3 "`SetForegroundWindow` is denied while the LL hook callback is still processing the keystroke": CONFIRMED by elimination. Pipe `previousapp` with freshly injected F24 input still worked, so input-recency alone was not the blocker; only the hook-callback context differed. Deferring the switch with `Dispatcher.BeginInvoke` was the fix (verified at pipe level; live keystroke E2E blocked by the machine locking).
+- Sorting: verified live via `show` + `getwindows`: after toggling to Total Commander it was index 0 (MRU), all untracked windows alphabetical by process name, foreground window at the bottom.
+- devenv elevation ruled out: both devenv and switcheroo_plus run NOT elevated (MainModule accessible).
+
+## Decisions
+- config.jsonc: `"PreviousAppEnabled": true`, `"PreviousAppHotKey": 81` (Q). Ctrl/Shift true, Alt/Win/CapsLock false.
+- `Core/AppWindow.cs`: added `ForceSwitchToLastVisibleActivePopup()` (ForceSwitchToWindow on the last active visible popup) with a doc comment explaining the foreground-lock denial.
+- `Switcheroo/MainWindow.xaml.cs`:
+  - `ActivateAppWindow` now calls `ForceSwitchToLastVisibleActivePopup()` and `RecordWindowUsed(target.HWnd)`.
+  - `previousAppHotkey_Pressed` reduced to `Dispatcher.BeginInvoke(new Action(TogglePreviousApp))`; new `TogglePreviousApp()` holds the old body; automation `TriggerPreviousApp()` calls `TogglePreviousApp()` synchronously.
+  - MRU tracking: fields `_mruWindowHandles` (front = most recent, cap 50), `_foregroundTracker` (DispatcherTimer 500 ms), `_lastTrackedForegroundHwnd`; `SetUpForegroundTracking()` called from ctor; `TrackForegroundWindow()` skips zero/same/self HWND and non-`IsAltTabWindow()`; `RecordWindowUsed()`; `MruRank()` (index or int.MaxValue).
+  - `LoadData`: sort `OrderBy(MruRank).ThenBy(ProcessTitle, CurrentCultureIgnoreCase).ThenBy(Title, ...)`; foreground-related window found via `FindIndex(AreWindowsRelated(...))` (was: only if first) and moved to bottom so Enter switches to the previous app.
+- `AGENTS.md`: documented list ordering, ForceSwitchToWindow, and the hook-callback deferral rule.
+- Built with VS2022 Community MSBuild (`build.bat` equivalent, Debug); NUnit 41/41 passed.
+- Old running instance (PID 76164, no automation pipe) killed; new instance started from `Switcheroo/bin/Debug/switcheroo_plus.exe` and left running.
+- Edit-tool note: `MainWindow.xaml.cs` has MIXED line endings; `\r` escapes in Edit.old_string did NOT match. Workaround: anchor edits on LF-only lines or use unique single-line strings without newlines.
+- NOT done at save time (from Prompt 2): (1) git commit of the 3 modified files (AGENTS.md, Core/AppWindow.cs, Switcheroo/MainWindow.xaml.cs); (2) Release Alt+Tab issue — likely causes identified: config `AltTabHook: false` (handler returns early) and/or Debug instance still running so the Release exe exits on the single-instance mutex; (3) `InternalTrace.*.log` relocation — files exist at repo root (NUnit console internal trace writes them to the CWD); user wants them under a `.log` directory.
+
+## Open risks
+- Live Ctrl+Shift+Q keystroke E2E after the `Dispatcher.BeginInvoke` fix is UNVERIFIED (machine locked). If the toggle still fails from the physical keyboard, revisit the hook-callback timing first.
+- MRU list is in-memory only: order resets to alphabetical on app restart and re-learns within seconds; stale HWNDs of closed windows linger (cap 50) and HWND reuse could theoretically alias.
+- Automation `getforeground` throws on the lock-screen window (invalid handle inside `ProcessTitle`/`ClassName`, `ManagedWinapi.ApiHelper.FailIfZero`) — pre-existing robustness gap, surfaced during testing.
+- `TrackForegroundWindow` polls every 500 ms; while locked it may record the lock-screen HWND if it passes `IsAltTabWindow()` (harmless once destroyed).
+- Untracked dirs in git status: `.memory/sessions/switcheroo-revert-backup/`, `.temp/` — decide whether to ignore or commit.
+- `Switcheroo/HotKey.cs` `LoadPreviousAppSettings`/`SavePreviousAppSettings` are dead-ish (superseded by the LL hook + OptionsWindow single-save path).
+</code></pre>
+</section>
+
+</main>
+</body>
+</html>

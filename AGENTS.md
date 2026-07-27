@@ -119,6 +119,7 @@ Switcheroo\bin\Debug\switcheroo.exe
 - `WindowFinder.GetWindows()` enumerates toplevel windows via `SystemWindow.AllToplevelWindows` and filters with `AppWindow.IsAltTabWindow()`.
 - `IsAltTabWindow()` applies Raymond Chen rules: visible, titled, not tool window, not `NOACTIVATE`, no visible owner, not `ITaskList_Deleted`, skips UWP `CoreWindow`, handles `ApplicationFrameWindow` cloak type.
 - `WindowFilterer` runs four matchers in sequence and accumulates scores.
+- Overlay list ordering (`MainWindow.LoadData`): most-recently-used windows first (recency tracked by a 500 ms foreground poll in `SetUpForegroundTracking` plus every `ActivateAppWindow`), remaining windows alphabetically by process name then title. The foreground window is moved to the bottom so pressing Enter switches to the previous app.
 
 ### Matchers (score-based ranking)
 All implement `IMatcher`:
@@ -136,6 +137,8 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - No `async/await` or `Task` usage.
 - Icon extraction uses `SendMessageTimeout` (Win32) with a timeout fallback.
 - `WindowCloser` uses a `BackgroundWorker`-style polling loop to detect closed windows.
+- Window activation goes through `WinApi.ForceSwitchToWindow` (`AttachThreadInput` workaround); plain `SwitchToThisWindow` is denied by the foreground lock when another app received the most recent input.
+- The previous-app hook (`PreviousAppHook`) fires synchronously inside the `WH_KEYBOARD_LL` callback; the switch must be deferred with `Dispatcher.BeginInvoke` because `SetForegroundWindow` is denied while the intercepted keystroke is still being processed.
 
 ### Error Handling
 - Minimal try/catch; many P/Invoke calls assume success.

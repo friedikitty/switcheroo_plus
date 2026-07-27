@@ -73,6 +73,13 @@ namespace Switcheroo
         private AutomationServer _automationServer;
         private readonly bool _autoMode;
 
+        // Most-recently-used window tracking (front = most recent). Used to keep
+        // the overlay list in a stable, predictable order: recent windows first,
+        // everything else alphabetically.
+        private readonly List<IntPtr> _mruWindowHandles = new List<IntPtr>();
+        private DispatcherTimer _foregroundTracker;
+        private IntPtr _lastTrackedForegroundHwnd;
+
         public MainWindow()
             : this(false)
         {
@@ -92,6 +99,8 @@ namespace Switcheroo
             SetUpHotKey();
             SetUpPreviousAppHotKey();
             SetUpAltTabHook();
+
+            SetUpForegroundTracking();
 
             if (!_autoMode)
                 CheckForUpdates();
@@ -221,10 +230,68 @@ namespace Switcheroo
                 _previousWindow = currentWindow;
 
             _currentWindow = targetWindow;
-            targetWindow.SwitchToLastVisibleActivePopup();
+            RecordWindowUsed(targetWindow.HWnd);
+            // ForceSwitch: SwitchToThisWindow is denied by the foreground lock when
+            // another app had the most recent input (previous-app hotkey path).
+            targetWindow.ForceSwitchToLastVisibleActivePopup();
 
             if (hideWindowAfterSwitch)
                 HideWindow();
+        }
+
+        /// <summary>
+        /// Polls the foreground window twice a second so the overlay list can be
+        /// ordered by recency: most recently used windows first, the rest
+        /// alphabetically. A WinEvent hook would also work, but a timer is simple
+        /// and cheap enough at this interval.
+        /// </summary>
+        private void SetUpForegroundTracking()
+        {
+            _foregroundTracker = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _foregroundTracker.Tick += (sender, args) => TrackForegroundWindow();
+            _foregroundTracker.Start();
+        }
+
+        private void TrackForegroundWindow()
+        {
+            IntPtr hwnd;
+            try
+            {
+                hwnd = SystemWindow.ForegroundWindow.HWnd;
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            if (hwnd == IntPtr.Zero || hwnd == _lastTrackedForegroundHwnd)
+                return;
+
+            // Do not let our own overlay become the "most recent" window.
+            if (hwnd == new WindowInteropHelper(this).Handle)
+                return;
+
+            _lastTrackedForegroundHwnd = hwnd;
+
+            var window = new AppWindow(hwnd);
+            if (!window.IsAltTabWindow())
+                return;
+
+            RecordWindowUsed(hwnd);
+        }
+
+        private void RecordWindowUsed(IntPtr hwnd)
+        {
+            _mruWindowHandles.Remove(hwnd);
+            _mruWindowHandles.Insert(0, hwnd);
+            if (_mruWindowHandles.Count > 50)
+                _mruWindowHandles.RemoveAt(_mruWindowHandles.Count - 1);
+        }
+
+        private int MruRank(AppWindowViewModel window)
+        {
+            var index = _mruWindowHandles.IndexOf(window.AppWindow.HWnd);
+            return index < 0 ? int.MaxValue : index;
         }
 
         private void SetUpHotKey()
@@ -289,6 +356,15 @@ namespace Switcheroo
         }
 
         private void previousAppHotkey_Pressed(object sender, EventArgs e)
+        {
+            // The hook event fires synchronously inside the WH_KEYBOARD_LL
+            // callback. SetForegroundWindow is denied while the intercepted
+            // keystroke is still being processed, so defer the actual switch
+            // until after the hook callback has returned.
+            Dispatcher.BeginInvoke(new Action(TogglePreviousApp));
+        }
+
+        private void TogglePreviousApp()
         {
             if (!_config.PreviousAppEnabled)
                 return;
@@ -431,15 +507,24 @@ namespace Switcheroo
         {
             _unfilteredWindowList = new WindowFinder().GetWindows().Select(window => new AppWindowViewModel(window)).ToList();
 
-            var firstWindow = _unfilteredWindowList.FirstOrDefault();
+            // Order the list so it stays predictable between invocations: most
+            // recently used windows first, the rest alphabetically by process
+            // name and title. Recency comes from TrackForegroundWindow().
+            _unfilteredWindowList = _unfilteredWindowList
+                .OrderBy(MruRank)
+                .ThenBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+
+            var foregroundIndex = _foregroundWindow == null ? -1 : _unfilteredWindowList.FindIndex(w => AreWindowsRelated(w.AppWindow, _foregroundWindow));
 
             var foregroundWindowMovedToBottom = false;
             
-            // Move first window to the bottom of the list if it's related to the foreground window
-            if (firstWindow != null && AreWindowsRelated(firstWindow.AppWindow, _foregroundWindow))
+            // Move the foreground window to the bottom of the list (wherever the sort placed it) so the first item is the previous app
+            if (foregroundIndex >= 0)
             {
-                _unfilteredWindowList.RemoveAt(0);
-                _unfilteredWindowList.Add(firstWindow);
+                _unfilteredWindowList.Add(_unfilteredWindowList[foregroundIndex]);
+                _unfilteredWindowList.RemoveAt(foregroundIndex);
                 foregroundWindowMovedToBottom = true;
             }
 
@@ -759,7 +844,7 @@ namespace Switcheroo
 
         public void TriggerPreviousApp()
         {
-            previousAppHotkey_Pressed(this, EventArgs.Empty);
+            TogglePreviousApp();
         }
 
         // ----- Test/diagnostic helpers (used by the automation API) -----

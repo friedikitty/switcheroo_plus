@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session Knowledge - switcheroo-revert-backup</title>
+  <meta name="ai-read-order" content="appendix-first" />
+  <meta name="ai-primary-section" content="#appendix" />
+  <!-- AI-AGENT: Read #appendix (verbatim digest) first. Illustrated sections are optional skim. -->
+  <style>
+    :root {
+      --ivory: #faf9f5;
+      --slate: #141413;
+      --clay: #d97757;
+      --oat: #e3dacc;
+      --olive: #788c5d;
+      --rust: #b04a3f;
+      --gray-150: #f0eee6;
+      --gray-300: #d1cfc5;
+      --gray-500: #87867f;
+      --gray-700: #3d3d3a;
+      --white: #ffffff;
+      --serif: ui-serif, Georgia, "Times New Roman", serif;
+      --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+      --radius-panel: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--ivory);
+      color: var(--gray-700);
+      font: 16px/1.6 var(--sans);
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1, h2, h3 {
+      color: var(--slate);
+      font-family: var(--serif);
+      line-height: 1.15;
+      margin: 0 0 0.6rem;
+    }
+    h1 { font-size: clamp(2rem, 3.6vw, 3.2rem); font-weight: 600; }
+    h2 { font-size: clamp(1.35rem, 2.2vw, 1.8rem); font-weight: 600; margin-top: 2rem; }
+    h3 { font-size: 1.05rem; font-weight: 600; }
+    p { margin: 0.4rem 0 0.9rem; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.75rem;
+      margin: 0.6rem 0 1.2rem;
+      font: 0.82rem var(--mono);
+      color: var(--gray-500);
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.18rem 0.55rem;
+      border: 1px solid var(--gray-300);
+      border-radius: 999px;
+      background: var(--white);
+    }
+    .ai-read-order {
+      font: 0.78rem/1.4 var(--mono);
+      color: var(--gray-500);
+      padding: 0.4rem 0;
+      margin: 0 0 0.75rem;
+      border-bottom: 1px solid var(--gray-300);
+    }
+    .ai-read-order a { color: var(--clay); }
+    .ai-read-order strong { color: var(--slate); font-weight: 600; }
+    nav.toc-bar {
+      position: static;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem 0.5rem;
+      font: 0.75rem/1.3 var(--mono);
+      padding: 0.35rem 0.6rem;
+      margin: 0 0 1rem;
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+    }
+    nav.toc-bar .toc-bar-label {
+      color: var(--gray-500);
+      margin-right: 0.25rem;
+    }
+    nav.toc-bar a {
+      color: var(--gray-700);
+      text-decoration: none;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+    }
+    nav.toc-bar a:hover { color: var(--clay); border-color: var(--clay); }
+    .tldr {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-left: 4px solid var(--clay);
+      border-radius: var(--radius-panel);
+      padding: 1rem 1rem 1rem 1.1rem;
+      margin: 1rem 0 1.4rem;
+    }
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.8rem;
+    }
+    .status {
+      font: 0.78rem var(--mono);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid var(--gray-300);
+      background: var(--oat);
+      color: var(--slate);
+    }
+    .status.ok { background: rgba(120, 140, 93, 0.18); border-color: var(--olive); color: var(--olive); }
+    .status.warn { background: rgba(176, 74, 63, 0.10); border-color: var(--rust); color: var(--rust); }
+    section {
+      margin: 0 0 1.5rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .panel {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-radius: var(--radius-panel);
+      padding: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--white);
+      border: 1.5px solid var(--gray-300);
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--gray-300);
+    }
+    th {
+      background: var(--gray-150);
+      color: var(--slate);
+      font-weight: 600;
+    }
+    code, pre {
+      font-family: var(--mono);
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 8px;
+      padding: 0.9rem;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    details {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 0.7rem 0.9rem;
+      margin: 0.6rem 0;
+    }
+    summary {
+      cursor: pointer;
+      color: var(--slate);
+      font-weight: 600;
+    }
+    .prompt-block pre {
+      margin-top: 0.7rem;
+    }
+    .diagram {
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      border-radius: var(--radius-panel);
+      padding: 1rem;
+    }
+    .diagram svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .small {
+      color: var(--gray-500);
+      font-size: 0.88rem;
+    }
+    .appendix-note {
+      margin-bottom: 0.8rem;
+      color: var(--gray-500);
+    }
+    .ai-understanding-digest pre {
+      background: #fffdf9;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Session Knowledge: switcheroo-revert-backup</h1>
+      <div class="meta">
+        <span class="chip">Date: 2026-06-22</span>
+        <span class="chip">Repo: <code>G:\github\switcheroo_plus</code></span>
+        <span class="chip">Commit: <code>7e85d42</code></span>
+      </div>
+    </header>
+
+    <aside class="ai-read-order" aria-label="Read order for AI agents" data-reader="ai">
+      <strong>For AI:</strong> Read <a href="#appendix">Appendix - understanding digest</a> first; skip full-page scan unless you need tables or diagrams.
+    </aside>
+
+    <nav class="toc-bar" aria-label="Section index">
+      <span class="toc-bar-label">Sections</span>
+      <a href="#tldr">TL;DR</a>
+      <a href="#user-prompts">User prompts</a>
+      <a href="#timeline">Timeline</a>
+      <a href="#artifact-map">Artifact map</a>
+      <a href="#system-view">System view</a>
+      <a href="#commands">Paths and commands</a>
+      <a href="#glossary">Glossary</a>
+      <a href="#appendix">Appendix</a>
+    </nav>
+
+    <section id="tldr" class="tldr">
+      <h2>TL;DR</h2>
+      <p>The attempted Switcheroo bugfix was reverted after the user reported the app was unusable in manual testing. The failed implementation was preserved under a repo-local <code>.backup/</code> snapshot, and that snapshot was committed as <code>7e85d42</code>.</p>
+      <div class="status-row">
+        <span class="status ok">Repo state restored</span>
+        <span class="status ok">Backup snapshot committed</span>
+        <span class="status warn">Manual failure root cause still unknown</span>
+      </div>
+    </section>
+
+    <section id="user-prompts">
+      <h2>User prompts</h2>
+      <details class="prompt-block" open>
+        <summary>Prompt 1 (first prompt)</summary>
+        <pre><code>Keep fixing the problem that: 
+1. the Switch back Feature is not working no matter what I register, but if I uncheck it, and the main hotkey is not Alt+Tab, it's actually working by the windows embeded feature to switch back and forth. 
+
+So, it's simple, findout what windows do when click Alt+Tab, call that API 
+
+2. If I check "Automatically switch window ..." , no key's can be clicked, only tab key. that's not what I want, I want up/down key can scroll though the items, and both 1-0a-z hotkeys can quickly switch between items, you may need to change the hotkey modification.
+
+I also want you to auto test the features</code></pre>
+      </details>
+      <details class="prompt-block">
+        <summary>Prompt 2</summary>
+        <pre><code>revert you previous change, the app is totally dead. save the change to a .backup folder, then revert, I will manually check the problem</code></pre>
+      </details>
+      <details class="prompt-block">
+        <summary>Prompt 3</summary>
+        <pre><code>The current state is good, make 1-N  git commit according to your knowledge. then call use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge</code></pre>
+      </details>
+    </section>
+
+    <section id="timeline">
+      <h2>Timeline</h2>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Phase</th>
+            <th scope="col">What happened</th>
+            <th scope="col">Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Implementation</td>
+            <td>Patched previous-app switching, Alt-held auto-switch navigation, unit tests, and GUI automation.</td>
+            <td>Automation passed, but manual user validation failed.</td>
+          </tr>
+          <tr>
+            <td>Recovery</td>
+            <td>Copied the full experiment into <code>.backup/revert-20260622-switchback-autoswitch/</code> and restored the live repo state.</td>
+            <td>Repo returned to the known-good state.</td>
+          </tr>
+          <tr>
+            <td>Packaging</td>
+            <td>Staged only the backup snapshot and committed it.</td>
+            <td><code>7e85d42 Add backup of reverted switchback experiment</code></td>
+          </tr>
+          <tr>
+            <td>Archival</td>
+            <td>Generated this session report and embedded the full AI digest.</td>
+            <td>Future agents can replay from the appendix.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="artifact-map">
+      <h2>Artifact map</h2>
+      <div class="grid">
+        <article class="panel">
+          <h3>What survived</h3>
+          <p>The repo code itself stayed reverted. Only the preserved experiment snapshot was intentionally retained.</p>
+          <p class="small">Commit subject: <code>Add backup of reverted switchback experiment</code></p>
+        </article>
+        <article class="panel">
+          <h3>What the backup contains</h3>
+          <p>Application code, test code, and one new GUI automation script from the reverted attempt.</p>
+          <p class="small">See the file table below for the exact paths.</p>
+        </article>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Path</th>
+            <th scope="col">Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/Switcheroo/MainWindow.xaml.cs</code></td><td>Overlay input and previous-app logic attempt</td></tr>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/Switcheroo/PreviousAppHook.cs</code></td><td>Hook guard changes for synthetic input</td></tr>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/Switcheroo/Automation/AutomationServer.cs</code></td><td>Extra automation endpoints</td></tr>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/Switcheroo/NativePreviousAppSwitcher.cs</code></td><td>Native-switch experiment helper</td></tr>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/Switcheroo/OverlayKeyActionResolver.cs</code></td><td>Alt-held overlay key interpretation experiment</td></tr>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/Core.UnitTests/OverlayKeyActionResolverTests.cs</code></td><td>Unit tests for key resolution</td></tr>
+          <tr><td><code>.backup/revert-20260622-switchback-autoswitch/AutomationTests/Test-AutoSwitchNavigation.ps1</code></td><td>GUI automation for Alt-held navigation</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="system-view">
+      <h2>System view</h2>
+      <div class="diagram">
+        <svg viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Session flow diagram">
+          <rect x="20" y="60" width="210" height="82" rx="12" fill="#ffffff" stroke="#d1cfc5" stroke-width="2"/>
+          <text x="44" y="94" fill="#141413" font-family="system-ui" font-size="20" font-weight="600">User bugfix request</text>
+          <text x="44" y="122" fill="#3d3d3a" font-family="system-ui" font-size="15">Previous-app + auto-switch</text>
+
+          <rect x="280" y="40" width="215" height="122" rx="12" fill="#ffffff" stroke="#d1cfc5" stroke-width="2"/>
+          <text x="304" y="76" fill="#141413" font-family="system-ui" font-size="20" font-weight="600">Implementation branch</text>
+          <text x="304" y="104" fill="#3d3d3a" font-family="system-ui" font-size="15">Code patch</text>
+          <text x="304" y="126" fill="#3d3d3a" font-family="system-ui" font-size="15">Unit tests</text>
+          <text x="304" y="148" fill="#3d3d3a" font-family="system-ui" font-size="15">GUI automation</text>
+
+          <rect x="545" y="60" width="180" height="82" rx="12" fill="#fff7f5" stroke="#d97757" stroke-width="2"/>
+          <text x="568" y="94" fill="#141413" font-family="system-ui" font-size="20" font-weight="600">Manual failure</text>
+          <text x="568" y="122" fill="#b04a3f" font-family="system-ui" font-size="15">"app is totally dead"</text>
+
+          <rect x="775" y="40" width="180" height="122" rx="12" fill="#ffffff" stroke="#d1cfc5" stroke-width="2"/>
+          <text x="798" y="76" fill="#141413" font-family="system-ui" font-size="20" font-weight="600">Recovery</text>
+          <text x="798" y="104" fill="#3d3d3a" font-family="system-ui" font-size="15">Save to .backup</text>
+          <text x="798" y="126" fill="#3d3d3a" font-family="system-ui" font-size="15">Revert live repo</text>
+          <text x="798" y="148" fill="#788c5d" font-family="system-ui" font-size="15">Commit snapshot</text>
+
+          <line x1="230" y1="101" x2="280" y2="101" stroke="#d97757" stroke-width="3"/>
+          <polygon points="280,101 268,94 268,108" fill="#d97757"/>
+          <line x1="495" y1="101" x2="545" y2="101" stroke="#d97757" stroke-width="3"/>
+          <polygon points="545,101 533,94 533,108" fill="#d97757"/>
+          <line x1="725" y1="101" x2="775" y2="101" stroke="#d97757" stroke-width="3"/>
+          <polygon points="775,101 763,94 763,108" fill="#d97757"/>
+        </svg>
+      </div>
+    </section>
+
+    <section id="commands">
+      <h2>Key paths and commands</h2>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Kind</th>
+            <th scope="col">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Commit</td><td><code>7e85d42b75aa77c742f5f5f24e651b8fc8c32fa5</code></td></tr>
+          <tr><td>Backup root</td><td><code>.backup/revert-20260622-switchback-autoswitch/</code></td></tr>
+          <tr><td>Session command source</td><td><code>T:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md</code></td></tr>
+          <tr><td>Sibling command</td><td><code>T:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\session-knowledge-html.md</code></td></tr>
+          <tr><td>Session HTML path</td><td><code>.memory/sessions/switcheroo-revert-backup/2026-06-22-switcheroo-revert-backup-session.html</code></td></tr>
+          <tr><td>Digest draft path</td><td><code>.temp/session-knowledge/2026-06-22-switcheroo-revert-backup-understanding.md</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="glossary">
+      <h2>Glossary</h2>
+      <details>
+        <summary>Why keep a backup commit of reverted work?</summary>
+        <p>It preserves the exact failed attempt for later forensic comparison without contaminating the live repo behavior.</p>
+      </details>
+      <details>
+        <summary>Why is the appendix the primary AI read target?</summary>
+        <p>The appendix holds the dense, verbatim digest. The illustrated sections above are optimized for fast human browsing and selective AI skimming.</p>
+      </details>
+    </section>
+
+    <section id="appendix">
+      <h2>Appendix - understanding digest (read by AI)</h2>
+      <p class="appendix-note">This is the verbatim Phase-1 Markdown digest for replay. The illustrated body above is the simplified browser view.</p>
+      <section class="ai-understanding-digest" data-reader="ai" aria-label="Verbatim understanding digest for AI">
+        <pre><code class="language-markdown">## User prompts (verbatim)
+
+Archive scope note: this archive includes the user-authored prompts from this session and excludes automatic harness context such as injected environment blocks.
+
+### Prompt 1 (first prompt)
+```text
+Keep fixing the problem that: 
+1. the Switch back Feature is not working no matter what I register, but if I uncheck it, and the main hotkey is not Alt+Tab, it's actually working by the windows embeded feature to switch back and forth. 
+
+So, it's simple, findout what windows do when click Alt+Tab, call that API 
+
+2. If I check "Automatically switch window ..." , no key's can be clicked, only tab key. that's not what I want, I want up/down key can scroll though the items, and both 1-0a-z hotkeys can quickly switch between items, you may need to change the hotkey modification.
+
+I also want you to auto test the features
+```
+
+### Prompt 2
+```text
+revert you previous change, the app is totally dead. save the change to a .backup folder, then revert, I will manually check the problem
+```
+
+### Prompt 3
+```text
+The current state is good, make 1-N  git commit according to your knowledge. then call use t:\KuaiPanCloud\DEV\ai_command\ai_tool\commands\save-session-knowledge-html.md to save the session knowledge
+```
+
+## Trigger
+
+- The original task was a bugfix for Switcheroo previous-app switching and Alt-held auto-switch navigation, plus end-to-end automation.
+- The first implementation passed automated tests but made the app unusable in the user’s manual check.
+- The user then requested a hard revert, preserving the attempted work inside a repo-local `.backup` folder.
+- Final request: commit the preserved backup snapshot and save session knowledge as HTML.
+
+## Evidence
+
+- Backup snapshot path:
+  - `.backup/revert-20260622-switchback-autoswitch/`
+- Reverted experiment files captured in backup:
+  - `Switcheroo/MainWindow.xaml.cs`
+  - `Switcheroo/PreviousAppHook.cs`
+  - `Switcheroo/Automation/AutomationServer.cs`
+  - `Switcheroo/Switcheroo.csproj`
+  - `Switcheroo/NativePreviousAppSwitcher.cs`
+  - `Switcheroo/OverlayKeyActionResolver.cs`
+  - `Core.UnitTests/OverlayKeyActionResolverTests.cs`
+  - `Core.UnitTests/Core.UnitTests.csproj`
+  - `AutomationTests/Test-AutoSwitchNavigation.ps1`
+- Final git commit created after revert:
+  - `7e85d42b75aa77c742f5f5f24e651b8fc8c32fa5`
+  - subject: `Add backup of reverted switchback experiment`
+- Final worktree state before writing this archive:
+  - `git status --short` returned clean output (apart from the environment warning about inaccessible global git ignore).
+
+## Model
+
+- The session split into two distinct phases:
+  - Implementation phase: patch app behavior and add automation/tests.
+  - Recovery phase: preserve attempt, revert codebase to prior-good state, then commit only the preserved snapshot.
+- The repo itself is intentionally left at the known-good reverted state.
+- The only persistent product of the failed experiment is the `.backup` copy, which is now the committed forensic artifact.
+
+## Hypothesis → verification
+
+- Hypothesis 1:
+  - A native previous-app path could be approximated by synthesizing plain `Alt+Tab` behind a custom shortcut.
+- Verification:
+  - Unit tests passed.
+  - GUI automation passed for default Alt+Tab, custom previous-app hook, and Alt-held auto-switch navigation.
+- Outcome:
+  - This was insufficient. The user’s manual validation found the app “totally dead”.
+- Follow-up action:
+  - Stop iterating on the feature patch.
+  - Preserve all attempted files in `.backup`.
+  - Revert the live repo state to the last known-good state.
+- Verification of revert:
+  - The repo diff was reduced to only `.backup/`.
+  - A single commit was created for that backup snapshot.
+
+## Decisions
+
+- Implemented but then reverted:
+  - Native previous-app switching helper based on synthetic `Alt+Tab`.
+  - Alt-held overlay key resolver for auto-switch mode.
+  - Extra automation endpoints for selected-index querying and direct Alt+Tab triggering.
+  - New GUI automation script for Alt-held navigation.
+- Preserved instead of deleting:
+  - The entire experiment snapshot under `.backup/revert-20260622-switchback-autoswitch/`.
+- Committed:
+  - One commit only, because the surviving intentional change is one coherent artifact:
+    - `7e85d42 Add backup of reverted switchback experiment`
+- Not done:
+  - No new fix attempt after the revert.
+  - No rerun of the app after the revert, because the user explicitly wanted to check manually.
+  - No session-memory mutation under the external Codex memory store; only repo-local session HTML generation is being done here.
+
+## Open risks
+
+- The root cause of “app is totally dead” after the attempted patch remains unresolved.
+- The passing GUI automation did not capture the failure mode that the user saw manually.
+- If work resumes on the feature later, the first step should be to compare the preserved `.backup` implementation against the reverted live state and reproduce the manual failure before any new patch.
+- The repo contains the failed attempt as a committed backup snapshot; future work should avoid treating that backup as approved production direction.</code></pre>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

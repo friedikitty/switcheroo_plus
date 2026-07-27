@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
@@ -98,6 +98,18 @@ namespace Switcheroo.Core
         {
             var lastActiveVisiblePopup = GetLastActiveVisiblePopup();
             WinApi.SwitchToThisWindow(lastActiveVisiblePopup, true);
+        }
+
+        /// <summary>
+        /// Like <see cref="SwitchToLastVisibleActivePopup"/>, but permitted even when
+        /// another application received the most recent input (for example when the
+        /// previous-app keyboard hook fires while the user is typing elsewhere).
+        /// <c>SwitchToThisWindow</c> is silently denied by the foreground lock in
+        /// that situation, which leaves the toggle hotkey appearing dead.
+        /// </summary>
+        public void ForceSwitchToLastVisibleActivePopup()
+        {
+            WinApi.ForceSwitchToWindow(GetLastActiveVisiblePopup());
         }
 
         public AppWindow Owner
