@@ -916,7 +916,8 @@ namespace Switcheroo
                     { "hwnd", vm.AppWindow.HWnd.ToInt64().ToString("X") },
                     { "title", vm.AppWindow.Title },
                     { "process", vm.AppWindow.ProcessTitle },
-                    { "shortcut", vm.ShortcutKey ?? string.Empty }
+                    { "shortcut", vm.ShortcutKey ?? string.Empty },
+                    { "selected", (lb.SelectedIndex == i).ToString() }
                 });
             }
             return result;
@@ -1144,30 +1145,47 @@ namespace Switcheroo
 
         private void AltTabPressed(object sender, AltTabHookEventArgs e)
         {
-            var cfg = ConfigManager.Load();
-            if (!cfg.AltTabHook)
+            // Runs inside the WH_KEYBOARD_LL callback: must stay well under
+            // LowLevelHooksTimeout (default 300ms) or Windows passes Alt+Tab
+            // through to the OS switcher and may silently drop the hook.
+            // So: decide and swallow here, do the heavy UI work deferred.
+            if (!_config.AltTabHook)
             {
                 // Ignore Alt+Tab presses if the hook is not activated by the user
                 return;
             }
 
-            _foregroundWindow = SystemWindow.ForegroundWindow;
-
-            if (_foregroundWindow.ClassName == "MultitaskingViewFrame")
+            try
             {
-                // If Windows' task switcher is on the screen then don't do anything
+                _foregroundWindow = SystemWindow.ForegroundWindow;
+                if (_foregroundWindow.ClassName == "MultitaskingViewFrame")
+                {
+                    // If Windows' task switcher is on the screen then don't do anything
+                    return;
+                }
+            }
+            catch
+            {
+                // Never throw inside the keyboard hook callback
                 return;
             }
 
             e.Handled = true;
 
+            var shiftDown = e.ShiftDown;
+            var ctrlDown = e.CtrlDown;
+            Dispatcher.BeginInvoke(new Action(() => AltTabShowOrCycle(shiftDown, ctrlDown)));
+        }
+
+        private void AltTabShowOrCycle(bool shiftDown, bool ctrlDown)
+        {
             if (Visibility != Visibility.Visible)
             {
                 tb.IsEnabled = true;
 
                 ActivateAndFocusMainWindow();
 
-                if (e.ShiftDown)
+                if (shiftDown)
                 {
                     LoadData(InitialFocus.PreviousItem);
                 }
@@ -1176,7 +1194,7 @@ namespace Switcheroo
                     LoadData(InitialFocus.NextItem);
                 }
 
-                if (cfg.AutoSwitch && !e.CtrlDown)
+                if (_config.AutoSwitch && !ctrlDown)
                 {
                     _altTabAutoSwitch = true;
                     tb.IsEnabled = false;
@@ -1188,7 +1206,7 @@ namespace Switcheroo
             }
             else
             {
-                if (e.ShiftDown)
+                if (shiftDown)
                 {
                     PreviousItem();
                 }
