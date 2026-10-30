@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
@@ -46,6 +46,15 @@ namespace Switcheroo.Core
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        public static readonly IntPtr HWND_TOP = IntPtr.Zero;
+        public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOMOVE = 0x0002;
+        public const uint SWP_NOACTIVATE = 0x0010;
 
         public enum GetAncestorFlags
         {
@@ -267,6 +276,12 @@ namespace Switcheroo.Core
                     ShowWindowAsync(targetHwnd, SW_SHOW);
 
                 SetForegroundWindow(targetHwnd);
+
+                // ponytail: in a disconnected session there is no foreground window, so the
+                // attach above is impossible and SetForegroundWindow silently no-ops;
+                // guarantee the z-order raise (focus stays with the foreground path).
+                if (GetForegroundWindow() != targetHwnd)
+                    SetWindowPos(targetHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             }
             finally
             {

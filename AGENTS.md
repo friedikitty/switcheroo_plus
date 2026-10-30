@@ -142,7 +142,7 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - No `async/await` or `Task` usage.
 - Icon extraction uses `SendMessageTimeout` (Win32) with a timeout fallback.
 - `WindowCloser` uses a `BackgroundWorker`-style polling loop to detect closed windows.
-- Window activation goes through `WinApi.ForceSwitchToWindow` (`AttachThreadInput` workaround); plain `SwitchToThisWindow` is denied by the foreground lock when another app received the most recent input.
+- Window activation goes through `WinApi.ForceSwitchToWindow` (`AttachThreadInput` workaround); plain `SwitchToThisWindow` is denied by the foreground lock when another app received the most recent input. When there is no foreground window at all (disconnected session) the attach is impossible, so it falls back to `SetWindowPos(HWND_TOP)` to at least raise the window.
 - The previous-app hook (`PreviousAppHook`) fires synchronously inside the `WH_KEYBOARD_LL` callback; the switch must be deferred with `Dispatcher.BeginInvoke` because `SetForegroundWindow` is denied while the intercepted keystroke is still being processed.
 
 ### Taskbar badges (quick-switch key overlay)
