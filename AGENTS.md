@@ -2,6 +2,11 @@
 
 ## Agent Safety Rules
 
+### Commit every iteration
+- At the end of **every** working iteration (feature, fix, or verification cycle), commit the changes. Do not leave completed work uncommitted.
+- Feature/fix work happens on a development branch checked out in the git worktree (e.g. `G:\github\switcheroo_plus_dev`); the main checkout stays on clean `master`.
+- Never commit to `master` directly unless the user explicitly asks.
+
 ### Running the GUI application
 - **Never** start `switcheroo_plus.exe` (or any interactive Windows process) without a defined timeout and a reliable way to communicate with or terminate it.
 - If the app is started for verification, always:
@@ -119,7 +124,7 @@ Switcheroo\bin\Debug\switcheroo.exe
 - `WindowFinder.GetWindows()` enumerates toplevel windows via `SystemWindow.AllToplevelWindows` and filters with `AppWindow.IsAltTabWindow()`.
 - `IsAltTabWindow()` applies Raymond Chen rules: visible, titled, not tool window, not `NOACTIVATE`, no visible owner, not `ITaskList_Deleted`, skips UWP `CoreWindow`, handles `ApplicationFrameWindow` cloak type.
 - `WindowFilterer` runs four matchers in sequence and accumulates scores.
-- Overlay list ordering (`MainWindow.LoadData`): most-recently-used windows first (recency tracked by a 500 ms foreground poll in `SetUpForegroundTracking` plus every `ActivateAppWindow`), remaining windows alphabetically by process name then title. The foreground window is moved to the bottom so pressing Enter switches to the previous app.
+- Overlay list ordering (`MainWindow.LoadData` / `OrderWindows`): when `RecentWindowsOnTopEnabled` (default on), the top of the list is the previous app followed by the other most-recently-used windows (up to `RecentWindowsOnTopCount`, default 5) sorted alphabetically; all remaining windows are alphabetical by process name then title. When disabled, the legacy order applies: all MRU windows first in recency order, then the rest alphabetically. Recency is tracked by a 500 ms foreground poll in `SetUpForegroundTracking` plus every `ActivateAppWindow`. In both modes the foreground window is moved to the bottom so pressing Enter switches to the previous app.
 
 ### Matchers (score-based ranking)
 All implement `IMatcher`:
@@ -140,6 +145,11 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - Window activation goes through `WinApi.ForceSwitchToWindow` (`AttachThreadInput` workaround); plain `SwitchToThisWindow` is denied by the foreground lock when another app received the most recent input.
 - The previous-app hook (`PreviousAppHook`) fires synchronously inside the `WH_KEYBOARD_LL` callback; the switch must be deferred with `Dispatcher.BeginInvoke` because `SetForegroundWindow` is denied while the intercepted keystroke is still being processed.
 
+### Taskbar badges (quick-switch key overlay)
+- When `AzShortcutsEnabled` and `TaskbarBadgesEnabled` (both default on), `TaskbarBadgeOverlay` (a transparent, click-through, topmost WPF window spanning the virtual screen) draws each window's shortcut key at the top-left of its taskbar button. Badges refresh at the end of `MainWindow.LoadData`, hide with the overlay, and close on quit.
+- Taskbar buttons are located via UI Automation: `FindAll(ControlType.Button)` over every `Shell_TrayWnd` / `Shell_SecondaryTrayWnd` toplevel window. `TB_BUTTONCOUNT`-style toolbar messages return 0 on ExplorerPatcher/reimplemented taskbars — UIA is the reliable path. Button→window matching is by exact title, else `"<title> - <digits>..."` (grouped-button suffix, localized). The whole lookup is best-effort: any failure just yields no badges.
+- Shortcut-key presses resolve by the displayed `ShortcutKey` label (`SwitchToWindowByShortcutKey`), not by list index, so keys stay correct after filtering.
+
 ### Error Handling
 - Minimal try/catch; many P/Invoke calls assume success.
 - `AppWindow` process-name resolution falls back to `Process.GetProcessById` on failure.
@@ -158,11 +168,14 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 | `Switcheroo/MainWindow.xaml.cs` | Overlay logic, hotkey handling, filtering, commands, list navigation |
 | `Switcheroo/App.xaml` / `App.xaml.cs` | Minimal WPF app declaration |
 | `Switcheroo/HotKey.cs` | Global hotkey registration via `RegisterHotKey`/`UnregisterHotKey` |
+| `Switcheroo/HotkeySelection.cs` | `HotkeySelection` model + `HotkeySelectionValidator` (in-app conflict rules, run at key-selection time and on OK) |
+| `Switcheroo/GlobalHotkeyProbe.cs` | System-level conflict probe: tries `RegisterHotKey` for a candidate shortcut to detect claims by other programs or Windows (e.g. Win+E). Blind to `WH_KEYBOARD_LL`-based hotkeys |
 | `Switcheroo/AltTabHook.cs` | Low-level keyboard hook (`WH_KEYBOARD_LL`) for Alt+Tab interception |
 | `Core/AppWindow.cs` | Win32 window wrapper: title, process name, icon, UWP support, `SwitchToThisWindow` |
 | `Core/WindowFinder.cs` | Enumerates toplevel windows, filters by `IsAltTabWindow` |
 | `Core/WindowFilterer.cs` | Runs matchers and produces ranked `FilterResult<AppWindow>` list |
 | `Core/WinApi.cs` | P/Invoke declarations (`user32.dll`, `kernel32.dll`) and constants |
+| `Switcheroo/TaskbarBadgeOverlay.cs` | Transparent overlay drawing shortcut-key badges on taskbar buttons (UIA button lookup) |
 | `Core/Matchers/*.cs` | Four scoring matchers and `XamlHighlighter` |
 | `Switcheroo/PortableSettingsProvider.cs` | Custom `SettingsProvider` for portable XML persistence |
 | `Installer/Installer.iss` | Inno Setup installer script |

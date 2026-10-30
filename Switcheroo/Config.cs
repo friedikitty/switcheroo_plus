@@ -59,8 +59,16 @@ namespace Switcheroo
         public int WindowHeight { get; set; } = 0;
         public bool MultiColumnEnabled { get; set; } = false;
 
+        // Pinned-recent list ordering: previous app stays first, the rest of the
+        // top group is alphabetical so the visible order stays stable.
+        public bool RecentWindowsOnTopEnabled { get; set; } = true;
+        public int RecentWindowsOnTopCount { get; set; } = 5;
+
         // 0-9 / a-z / A-Z overlay shortcuts
         public bool AzShortcutsEnabled { get; set; } = true;
+
+        // Draw the quick-switch key at the top-left of each window's taskbar button
+        public bool TaskbarBadgesEnabled { get; set; } = true;
 
         /// <summary>
         /// Legacy config directory used by older builds. Kept for one-time migration.
@@ -292,8 +300,16 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"WindowHeight\": {0},", cfg.WindowHeight));
             sb.AppendLine(string.Format("  \"MultiColumnEnabled\": {0},", Bool(cfg.MultiColumnEnabled)));
             sb.AppendLine();
+            sb.AppendLine("  // Pin the most recently used windows at the top of the list");
+            sb.AppendLine("  // (previous app stays first, the rest of the group is alphabetical)");
+            sb.AppendLine(string.Format("  \"RecentWindowsOnTopEnabled\": {0},", Bool(cfg.RecentWindowsOnTopEnabled)));
+            sb.AppendLine(string.Format("  \"RecentWindowsOnTopCount\": {0},", cfg.RecentWindowsOnTopCount));
+            sb.AppendLine();
             sb.AppendLine("  // Show 0-9 / a-z / A-Z shortcuts in the overlay");
-            sb.AppendLine(string.Format("  \"AzShortcutsEnabled\": {0}", Bool(cfg.AzShortcutsEnabled)));
+            sb.AppendLine(string.Format("  \"AzShortcutsEnabled\": {0},", Bool(cfg.AzShortcutsEnabled)));
+            sb.AppendLine();
+            sb.AppendLine("  // Draw the quick-switch key at the top-left of each window's taskbar button");
+            sb.AppendLine(string.Format("  \"TaskbarBadgesEnabled\": {0}", Bool(cfg.TaskbarBadgesEnabled)));
             sb.AppendLine("}");
             return sb.ToString();
         }

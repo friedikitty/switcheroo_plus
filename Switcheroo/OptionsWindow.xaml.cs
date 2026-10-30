@@ -82,8 +82,12 @@ namespace Switcheroo
             AutoSwitch.IsChecked = _config.AutoSwitch;
             AutoSwitch.IsEnabled = _config.AltTabHook;
             AzShortcutsCheckBox.IsChecked = _config.AzShortcutsEnabled;
+            TaskbarBadgesCheckBox.IsChecked = _config.TaskbarBadgesEnabled;
             OpenUsageHintsByDefaultCheckBox.IsChecked = _config.OpenUsageHintsByDefault;
             MultiColumnCheckBox.IsChecked = _config.MultiColumnEnabled;
+            RecentOnTopCheckBox.IsChecked = _config.RecentWindowsOnTopEnabled;
+            RecentOnTopCountBox.Text = _config.RecentWindowsOnTopCount.ToString();
+            RecentOnTopCountBox.IsEnabled = _config.RecentWindowsOnTopEnabled;
             PreviousAppCheckBox.IsChecked = _config.PreviousAppEnabled;
             PreviousAppPreview.Text = _previousAppViewModel.ToString();
             PreviousAppPreview.IsEnabled = _config.PreviousAppEnabled;
@@ -155,6 +159,7 @@ namespace Switcheroo
             _config.AltTabHook = activateWithAltTab;
             _config.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
             _config.AzShortcutsEnabled = AzShortcutsCheckBox.IsChecked.GetValueOrDefault();
+            _config.TaskbarBadgesEnabled = TaskbarBadgesCheckBox.IsChecked.GetValueOrDefault();
             _config.PreviousAppEnabled = previousAppEnabled;
             _config.PreviousAppAlt = _previousAppViewModel.Alt;
             _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;
@@ -166,6 +171,11 @@ namespace Switcheroo
             _config.RunOnStartup = RunOnStartup.IsChecked.GetValueOrDefault();
             _config.OpenUsageHintsByDefault = OpenUsageHintsByDefaultCheckBox.IsChecked.GetValueOrDefault();
             _config.MultiColumnEnabled = MultiColumnCheckBox.IsChecked.GetValueOrDefault();
+            _config.RecentWindowsOnTopEnabled = RecentOnTopCheckBox.IsChecked.GetValueOrDefault();
+            int recentOnTopCount;
+            if (!int.TryParse(RecentOnTopCountBox.Text, out recentOnTopCount))
+                recentOnTopCount = 5;
+            _config.RecentWindowsOnTopCount = Math.Max(1, Math.Min(50, recentOnTopCount));
             try
             {
                 var autoStart = new AutoStart { IsEnabled = _config.RunOnStartup };
@@ -192,8 +202,8 @@ namespace Switcheroo
             var key = (e.Key == Key.System ? e.SystemKey : e.Key);
             if (IsModifierKey(key)) return;
 
-            _hotkeyViewModel = BuildViewModelFromKeyEvent(key);
-            var previewText = _hotkeyViewModel.ToString();
+            var candidate = BuildViewModelFromKeyEvent(key);
+            var previewText = candidate.ToString();
 
             if (previewText == "Tab")
             {
@@ -201,6 +211,32 @@ namespace Switcheroo
                 return;
             }
 
+            // Check for shortcut conflicts as soon as the key is selected
+            // (e.g. a clash with the switch-back shortcut), not only on OK.
+            var validation = HotkeySelectionValidator.Validate(
+                HotKeyCheckBox.IsChecked.GetValueOrDefault(),
+                ToSelection(candidate),
+                AltTabCheckBox.IsChecked.GetValueOrDefault(),
+                PreviousAppCheckBox.IsChecked.GetValueOrDefault(),
+                ToSelection(_previousAppViewModel));
+            if (!validation.IsValid)
+            {
+                MessageBox.Show(validation.Message, "Shortcut conflict", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Ask the system: is this shortcut already claimed by another
+            // program or by Windows itself (e.g. Win+E)? The probe tries
+            // RegisterHotKey, so it never triggers the other app.
+            if (GlobalHotkeyProbe.Check(ToSelection(candidate)) == HotkeyAvailability.Occupied)
+            {
+                MessageBox.Show(
+                    "This shortcut is already registered by another program or by Windows. Choose another one.",
+                    "Shortcut already in use", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _hotkeyViewModel = candidate;
             HotkeyPreview.Text = previewText;
         }
 
@@ -210,16 +246,43 @@ namespace Switcheroo
             var key = (e.Key == Key.System ? e.SystemKey : e.Key);
             if (IsModifierKey(key)) return;
 
-            _previousAppViewModel = BuildViewModelFromKeyEvent(key);
-            var previewText = _previousAppViewModel.ToString();
+            var prevCandidate = BuildViewModelFromKeyEvent(key);
+            var previewText = prevCandidate.ToString();
 
             // Plain Tab moves focus; CapsLock+Tab is a valid shortcut.
-            if (previewText == "Tab" && !_previousAppViewModel.CapsLock)
+            if (previewText == "Tab" && !prevCandidate.CapsLock)
             {
                 ((UIElement) sender).MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
                 return;
             }
 
+            // Check for shortcut conflicts as soon as the key is selected
+            // (e.g. a clash with the activation shortcut), not only on OK.
+            var prevValidation = HotkeySelectionValidator.Validate(
+                HotKeyCheckBox.IsChecked.GetValueOrDefault(),
+                ToSelection(_hotkeyViewModel),
+                AltTabCheckBox.IsChecked.GetValueOrDefault(),
+                PreviousAppCheckBox.IsChecked.GetValueOrDefault(),
+                ToSelection(prevCandidate));
+            if (!prevValidation.IsValid)
+            {
+                MessageBox.Show(prevValidation.Message, "Shortcut conflict", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Ask the system: is this shortcut already claimed by another
+            // program or by Windows itself? The probe tries RegisterHotKey,
+            // so it never triggers the other app. Note: hook-based hotkeys
+            // (WH_KEYBOARD_LL) in other apps cannot be detected this way.
+            if (GlobalHotkeyProbe.Check(ToSelection(prevCandidate)) == HotkeyAvailability.Occupied)
+            {
+                MessageBox.Show(
+                    "This shortcut is already registered by another program or by Windows. Choose another one.",
+                    "Shortcut already in use", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _previousAppViewModel = prevCandidate;
             PreviousAppPreview.Text = previewText;
         }
 
@@ -359,6 +422,16 @@ namespace Switcheroo
         private void HotKeyCheckBox_Checked(object sender, RoutedEventArgs e)
         {
             HotkeyPreview.IsEnabled = true;
+        }
+
+        private void RecentOnTopCheckBox_OnChecked(object sender, RoutedEventArgs e)
+        {
+            RecentOnTopCountBox.IsEnabled = true;
+        }
+
+        private void RecentOnTopCheckBox_OnUnchecked(object sender, RoutedEventArgs e)
+        {
+            RecentOnTopCountBox.IsEnabled = false;
         }
 
         private void HotKeyCheckBox_OnUnchecked(object sender, RoutedEventArgs e)

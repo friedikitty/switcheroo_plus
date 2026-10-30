@@ -71,6 +71,7 @@ namespace Switcheroo
         private SystemWindow _previousWindow;
         private AppWindow _currentWindow;
         private AutomationServer _automationServer;
+        private TaskbarBadgeOverlay _taskbarBadges;
         private readonly bool _autoMode;
 
         // Most-recently-used window tracking (front = most recent). Used to keep
@@ -136,22 +137,38 @@ namespace Switcheroo
                 else if (args.Key >= Key.NumPad0 && args.Key <= Key.NumPad9)
                     digitIndex = args.Key - Key.NumPad0;
 
-                if (digitIndex >= 0 && digitIndex < _filteredWindowList.Count)
+                if (digitIndex >= 0)
                 {
-                    SwitchToWindowByIndex(digitIndex);
-                    args.Handled = true;
+                    if (_config.AzShortcutsEnabled)
+                    {
+                        SwitchToWindowByShortcutKey(digitIndex.ToString());
+                        args.Handled = true;
+                    }
+                    else if (digitIndex < _filteredWindowList.Count)
+                    {
+                        SwitchToWindowByIndex(digitIndex);
+                        args.Handled = true;
+                    }
                     return;
                 }
 
-                // a-z / A-Z direct switch (index 10-61)
+                // a-z / A-Z direct switch
                 if (args.Key >= Key.A && args.Key <= Key.Z)
                 {
                     bool isUpper = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-                    int idx = isUpper ? (10 + 26 + (args.Key - Key.A)) : (10 + (args.Key - Key.A));
-                    if (idx < _filteredWindowList.Count)
+                    if (_config.AzShortcutsEnabled)
                     {
-                        SwitchToWindowByIndex(idx);
+                        SwitchToWindowByShortcutKey(((char)((isUpper ? 'A' : 'a') + (args.Key - Key.A))).ToString());
                         args.Handled = true;
+                    }
+                    else
+                    {
+                        int idx = isUpper ? (10 + 26 + (args.Key - Key.A)) : (10 + (args.Key - Key.A));
+                        if (idx < _filteredWindowList.Count)
+                        {
+                            SwitchToWindowByIndex(idx);
+                            args.Handled = true;
+                        }
                     }
                     return;
                 }
@@ -219,6 +236,31 @@ namespace Switcheroo
                 var win = _filteredWindowList[index];
                 ActivateAppWindow(_currentWindow, win.AppWindow, true);
             }
+        }
+
+        private void SwitchToWindowByShortcutKey(string shortcutKey)
+        {
+            foreach (var win in _filteredWindowList)
+            {
+                if (win.ShortcutKey == shortcutKey)
+                {
+                    ActivateAppWindow(_currentWindow, win.AppWindow, true);
+                    return;
+                }
+            }
+        }
+
+        private void UpdateTaskbarBadges()
+        {
+            if (!_config.TaskbarBadgesEnabled || !_config.AzShortcutsEnabled)
+            {
+                if (_taskbarBadges != null)
+                    _taskbarBadges.Hide();
+                return;
+            }
+            if (_taskbarBadges == null)
+                _taskbarBadges = new TaskbarBadgeOverlay();
+            _taskbarBadges.UpdateBadges(_unfilteredWindowList);
         }
 
         private void ActivateAppWindow(AppWindow currentWindow, AppWindow targetWindow, bool hideWindowAfterSwitch)
@@ -292,6 +334,55 @@ namespace Switcheroo
         {
             var index = _mruWindowHandles.IndexOf(window.AppWindow.HWnd);
             return index < 0 ? int.MaxValue : index;
+        }
+
+        /// <summary>
+        /// Orders the window list. When RecentWindowsOnTopEnabled is on, the most
+        /// recently used windows are pinned at the top: the previous app keeps slot
+        /// 0 (so Enter / Alt+Tab-release still switches back to it) and the rest of
+        /// the group is sorted alphabetically, keeping the visible order stable.
+        /// Everything else is alphabetical by process name and title. When the
+        /// option is off, the whole list is ordered by recency (legacy behavior).
+        /// Recency comes from TrackForegroundWindow().
+        /// </summary>
+        private List<AppWindowViewModel> OrderWindows(List<AppWindowViewModel> windows)
+        {
+            if (!_config.RecentWindowsOnTopEnabled)
+            {
+                return windows
+                    .OrderBy(MruRank)
+                    .ThenBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+            }
+
+            var count = _config.RecentWindowsOnTopCount < 1 ? 5 : _config.RecentWindowsOnTopCount;
+            var inList = new HashSet<IntPtr>(windows.Select(w => w.AppWindow.HWnd));
+            var recentHandles = _mruWindowHandles.Where(inList.Contains).Take(count).ToList();
+
+            var foregroundHwnd = _foregroundWindow == null ? IntPtr.Zero : _foregroundWindow.HWnd;
+            var prevAppHwnd = recentHandles.FirstOrDefault(hwnd => hwnd != foregroundHwnd);
+
+            var topSet = new HashSet<IntPtr>(recentHandles.Where(hwnd => hwnd != foregroundHwnd));
+
+            var ordered = new List<AppWindowViewModel>();
+            var prevApp = prevAppHwnd == IntPtr.Zero ? null : windows.FirstOrDefault(w => w.AppWindow.HWnd == prevAppHwnd);
+            if (prevApp != null)
+                ordered.Add(prevApp);
+
+            var recentRest = windows
+                .Where(w => w.AppWindow.HWnd != prevAppHwnd && topSet.Contains(w.AppWindow.HWnd))
+                .OrderBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase);
+            ordered.AddRange(recentRest);
+
+            var rest = windows
+                .Where(w => !topSet.Contains(w.AppWindow.HWnd))
+                .OrderBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase);
+            ordered.AddRange(rest);
+
+            return ordered;
         }
 
         private void SetUpHotKey()
@@ -507,14 +598,8 @@ namespace Switcheroo
         {
             _unfilteredWindowList = new WindowFinder().GetWindows().Select(window => new AppWindowViewModel(window)).ToList();
 
-            // Order the list so it stays predictable between invocations: most
-            // recently used windows first, the rest alphabetically by process
-            // name and title. Recency comes from TrackForegroundWindow().
-            _unfilteredWindowList = _unfilteredWindowList
-                .OrderBy(MruRank)
-                .ThenBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
-                .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
-                .ToList();
+            // Order the list so it stays predictable between invocations.
+            _unfilteredWindowList = OrderWindows(_unfilteredWindowList);
 
             var foregroundIndex = _foregroundWindow == null ? -1 : _unfilteredWindowList.FindIndex(w => AreWindowsRelated(w.AppWindow, _foregroundWindow));
 
@@ -584,6 +669,8 @@ namespace Switcheroo
             }), DispatcherPriority.Render);
 
             // Remember the current foreground window before we switch
+            UpdateTaskbarBadges();
+
             _currentWindow = new AppWindow(SystemWindow.ForegroundWindow.HWnd);
         }
 
@@ -657,6 +744,8 @@ namespace Switcheroo
             }
 
             _altTabAutoSwitch = false;
+            if (_taskbarBadges != null)
+                _taskbarBadges.Hide();
             Opacity = 0;
             Dispatcher.BeginInvoke(new Action(Hide), DispatcherPriority.Input);
         }
@@ -746,6 +835,11 @@ namespace Switcheroo
             }
             _hotkey.Dispose();
             DisposePreviousAppHook();
+            if (_taskbarBadges != null)
+            {
+                _taskbarBadges.Close();
+                _taskbarBadges = null;
+            }
             Application.Current.Shutdown();
         }
 
@@ -826,6 +920,29 @@ namespace Switcheroo
                 });
             }
             return result;
+        }
+
+        public bool PressOverlayKeyForTest(string keyName)
+        {
+            Key key;
+            try { key = (Key)Enum.Parse(typeof(Key), keyName, true); }
+            catch { return false; }
+            if (PresentationSource.FromVisual(this) == null)
+                return false;
+            // Focus the list so the handler's search-box guard passes,
+            // mirroring a user who clicked the list before pressing a shortcut
+            Keyboard.Focus(lb);
+            var args = new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(this), 0, key);
+            args.RoutedEvent = UIElement.PreviewKeyDownEvent;
+            RaiseEvent(args);
+            return args.Handled;
+        }
+
+        public List<Dictionary<string, string>> GetBadgeList()
+        {
+            if (_taskbarBadges == null)
+                return new List<Dictionary<string, string>>();
+            return _taskbarBadges.GetBadgeList();
         }
 
         public void SelectIndex(int index)
@@ -1201,6 +1318,7 @@ namespace Switcheroo
 
             _filteredWindowList.Remove(window);
             _unfilteredWindowList.Remove(window);
+            UpdateTaskbarBadges();
         }
 
         private void ScrollListUp(object sender, ExecutedRoutedEventArgs e)

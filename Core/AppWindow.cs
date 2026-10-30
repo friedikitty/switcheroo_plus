@@ -199,16 +199,24 @@ namespace Switcheroo.Core
             return WinApi.GetProp(HWnd, "ITaskList_Deleted") != IntPtr.Zero;
         }
 
+        private string TryGetClassName()
+        {
+            // ponytail: a cached hwnd may already be destroyed; GetClassName then
+            // throws via ApiHelper.FailIfZero and kills filtering. Treat as no match.
+            try { return ClassName; }
+            catch { return string.Empty; }
+        }
+
         private bool IsCoreWindow()
         {
             // Avoids double entries for Windows Store Apps on Windows 10
-            return ClassName == "Windows.UI.Core.CoreWindow";
+            return TryGetClassName() == "Windows.UI.Core.CoreWindow";
         }
 
         private bool IsApplicationFrameWindow()
         {
             // Is a UWP application
-            return ClassName == "ApplicationFrameWindow";
+            return TryGetClassName() == "ApplicationFrameWindow";
         }
 
         private bool HasAppropriateApplicationViewCloakType()

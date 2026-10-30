@@ -188,3 +188,6 @@ Installer/Output
 .cursor/
 .aider/
 .plan/
+
+# temp
+.temp/

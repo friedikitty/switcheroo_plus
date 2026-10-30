@@ -184,6 +184,16 @@ namespace Switcheroo.Automation
                     response["ok"] = true;
                     break;
 
+                case "presskey":
+                    response["handled"] = _mainWindow.PressOverlayKeyForTest(
+                        request.ContainsKey("key") ? request["key"] : string.Empty);
+                    response["ok"] = true;
+                    break;
+
+                case "getbadges":
+                    response["badges"] = _mainWindow.GetBadgeList();
+                    break;
+
                 case "getwindows":
                     response["windows"] = _mainWindow.GetWindowList();
                     break;

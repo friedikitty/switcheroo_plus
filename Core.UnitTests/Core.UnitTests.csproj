@@ -42,6 +42,7 @@
     <Compile Include="ContainsMatcherTest.cs" />
     <Compile Include="ConfigManagerTests.cs" />
     <Compile Include="HotkeySelectionValidatorTests.cs" />
+    <Compile Include="GlobalHotkeyProbeTests.cs" />
     <Compile Include="IndividualCharactersMatcherTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="StartsWithMatcherTests.cs" />

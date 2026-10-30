@@ -19,6 +19,11 @@ namespace Switcheroo
             }
         }
 
+        public bool HasModifier
+        {
+            get { return Alt || Ctrl || Shift || WindowsKey || CapsLock; }
+        }
+
         public bool Equals(HotkeySelection other)
         {
             if (ReferenceEquals(null, other)) return false;
@@ -100,6 +105,22 @@ namespace Switcheroo
                 return new HotkeyValidationResult(
                     false,
                     "Alt+Tab is already assigned to activating Switcheroo. Choose another switch-back shortcut or turn off \"Activate Switcheroo with Alt+Tab\".");
+            }
+
+            if (activateShortcutEnabled && activateShortcut != null && !activateShortcut.HasModifier)
+            {
+                return new HotkeyValidationResult(
+                    false,
+                    "The activation shortcut needs at least one modifier (Alt, Ctrl, Shift or Win). " +
+                    "A plain key would be captured every time you press it.");
+            }
+
+            if (previousAppEnabled && previousAppShortcut != null && !previousAppShortcut.HasModifier)
+            {
+                return new HotkeyValidationResult(
+                    false,
+                    "The switch-back shortcut needs at least one modifier (Alt, Ctrl, Shift, Win or CapsLock). " +
+                    "A plain key would be swallowed every time you press it, breaking normal typing.");
             }
 
             return HotkeyValidationResult.Valid;
