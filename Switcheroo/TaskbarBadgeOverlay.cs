@@ -9,10 +9,14 @@ using ManagedWinapi.Windows;
 namespace Switcheroo
 {
     /// <summary>
-    /// Transparent, click-through overlay that draws each window's quick-switch
-    /// key at the top-left corner of its taskbar button.
+    /// Draws each window's quick-switch key at the top-left corner of its
+    /// taskbar button. One small opaque topmost window per badge: a single
+    /// full-screen transparent (layered) overlay renders nowhere on
+    /// multi-monitor mixed-DPI setups, and small layered windows are clipped
+    /// by the taskbar on Windows 10 - opaque non-layered windows are the only
+    /// form verified to show over the taskbar.
     /// </summary>
-    public class TaskbarBadgeOverlay : Window
+    public class TaskbarBadgeOverlay
     {
         private class TaskbarButton
         {
@@ -20,68 +24,80 @@ namespace Switcheroo
             public Rect Rect;
         }
 
-        private readonly Canvas _canvas;
-
-        public TaskbarBadgeOverlay()
-        {
-            WindowStyle = WindowStyle.None;
-            AllowsTransparency = true;
-            Background = Brushes.Transparent;
-            Topmost = true;
-            ShowInTaskbar = false;
-            ShowActivated = false;
-            IsHitTestVisible = false;
-            Focusable = false;
-            // Untitled on purpose: IsAltTabWindow skips windows without a title
-            Title = "";
-            Left = SystemParameters.VirtualScreenLeft;
-            Top = SystemParameters.VirtualScreenTop;
-            Width = SystemParameters.VirtualScreenWidth;
-            Height = SystemParameters.VirtualScreenHeight;
-            _canvas = new Canvas();
-            Content = _canvas;
-        }
+        private readonly List<Window> _chips = new List<Window>();
 
         public void UpdateBadges(IList<AppWindowViewModel> windows)
         {
-            _canvas.Children.Clear();
+            var used = new List<Tuple<string, Point>>();
             try
             {
-                PlaceBadges(windows, FindTaskbarButtons());
+                CollectBadgePositions(windows, FindTaskbarButtons(), used);
             }
             catch
             {
                 // Taskbar lookup is best-effort; never break the switcher over badges
             }
 
-            if (_canvas.Children.Count > 0)
-                Show();
-            else
-                Hide();
+            for (var i = 0; i < _chips.Count; i++)
+                _chips[i].Hide();
+
+            for (var i = 0; i < used.Count; i++)
+            {
+                var chip = i < _chips.Count ? _chips[i] : CreateChip();
+                if (i >= _chips.Count)
+                    _chips.Add(chip);
+                ((Border)chip.Content).Child = new TextBlock
+                {
+                    Text = used[i].Item1,
+                    Foreground = Brushes.White,
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                // ponytail: UIA rect is physical pixels, WPF Left/Top are DIPs -
+                // identical at 100% DPI; needs TransformFromDevice if DPI scaling matters
+                chip.Left = used[i].Item2.X + 2;
+                chip.Top = used[i].Item2.Y + 2;
+                chip.Show();
+            }
+        }
+
+        public void Hide()
+        {
+            foreach (var chip in _chips)
+                chip.Hide();
+        }
+
+        public void Close()
+        {
+            foreach (var chip in _chips)
+                chip.Close();
+            _chips.Clear();
         }
 
         public List<Dictionary<string, string>> GetBadgeList()
         {
             var result = new List<Dictionary<string, string>>();
-            foreach (UIElement child in _canvas.Children)
+            foreach (var chip in _chips)
             {
-                var border = child as Border;
-                if (border == null)
+                if (!chip.IsVisible)
                     continue;
-                var text = border.Child as TextBlock;
+                var text = ((Border)chip.Content).Child as TextBlock;
                 if (text == null)
                     continue;
                 result.Add(new Dictionary<string, string>
                 {
                     { "key", text.Text },
-                    { "x", (Canvas.GetLeft(border) + Left).ToString("0") },
-                    { "y", (Canvas.GetTop(border) + Top).ToString("0") }
+                    { "x", chip.Left.ToString("0") },
+                    { "y", chip.Top.ToString("0") }
                 });
             }
             return result;
         }
 
-        private void PlaceBadges(IList<AppWindowViewModel> windows, List<TaskbarButton> buttons)
+        private static void CollectBadgePositions(IList<AppWindowViewModel> windows,
+            List<TaskbarButton> buttons, List<Tuple<string, Point>> output)
         {
             var keyed = new List<AppWindowViewModel>();
             foreach (var window in windows)
@@ -100,13 +116,8 @@ namespace Switcheroo
                     if (used[i] || !NameMatchesTitle(buttons[i].Name, window.AppWindow.Title))
                         continue;
                     used[i] = true;
-
-                    var badge = CreateBadge(window.ShortcutKey);
-                    // ponytail: UIA rect is physical pixels, WPF Left/Top are DIPs -
-                    // identical at 100% DPI; needs TransformFromDevice if DPI scaling matters
-                    Canvas.SetLeft(badge, buttons[i].Rect.X - Left + 2);
-                    Canvas.SetTop(badge, buttons[i].Rect.Y - Top + 2);
-                    _canvas.Children.Add(badge);
+                    output.Add(Tuple.Create(window.ShortcutKey,
+                        new Point(buttons[i].Rect.X, buttons[i].Rect.Y)));
                     break;
                 }
             }
@@ -163,23 +174,43 @@ namespace Switcheroo
             return buttons;
         }
 
-        private static Border CreateBadge(string key)
+        private static Window CreateChip()
         {
-            return new Border
+            var chip = new Window
             {
-                Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x1E, 0x1E, 0x1E)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(3, 0, 3, 0),
-                Child = new TextBlock
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                AllowsTransparency = false,
+                Topmost = true,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                // ponytail: fixed size - SizeToContent proved unreliable here
+                // (some chips ended up 136x39 in-app though identical probe
+                // windows measure 15x16); keys are single chars, so size once
+                Width = 18,
+                Height = 19,
+                Content = new Border
                 {
-                    Text = key,
-                    Foreground = Brushes.White,
-                    FontSize = 11,
-                    FontWeight = FontWeights.Bold
+                    Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x1E, 0x1E)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77)),
+                    BorderThickness = new Thickness(1)
                 }
             };
+            // Click-through, never activated, keep out of alt-tab enumeration
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(chip).EnsureHandle();
+            const int GWL_EXSTYLE = -20;
+            const int WS_EX_TRANSPARENT = 0x20;
+            const int WS_EX_TOOLWINDOW = 0x80;
+            const int WS_EX_NOACTIVATE = 0x08000000;
+            SetWindowLong(hwnd, GWL_EXSTYLE,
+                GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+            return chip;
         }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern int GetWindowLong(System.IntPtr h, int index);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern int SetWindowLong(System.IntPtr h, int index, int value);
     }
 }
