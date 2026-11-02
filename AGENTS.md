@@ -146,9 +146,13 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - The previous-app hook (`PreviousAppHook`) fires synchronously inside the `WH_KEYBOARD_LL` callback; the switch must be deferred with `Dispatcher.BeginInvoke` because `SetForegroundWindow` is denied while the intercepted keystroke is still being processed.
 
 ### Taskbar badges (quick-switch key overlay)
-- When `AzShortcutsEnabled` and `TaskbarBadgesEnabled` (both default on), `TaskbarBadgeOverlay` draws each window's shortcut key at the top-left of its taskbar button using **one small opaque, click-through, topmost WPF window per badge** (pooled). A single full-screen transparent (layered) overlay renders nowhere on multi-monitor mixed-DPI setups, and small layered windows are clipped by the taskbar on Windows 10 - opaque non-layered windows are the only form verified to show over the taskbar. Badges refresh at the end of `MainWindow.LoadData`, hide with the overlay, and close on quit.
-- Taskbar buttons are located via UI Automation: `FindAll(ControlType.Button)` over every `Shell_TrayWnd` / `Shell_SecondaryTrayWnd` toplevel window. `TB_BUTTONCOUNT`-style toolbar messages return 0 on ExplorerPatcher/reimplemented taskbars — UIA is the reliable path. Button→window matching is by exact title, else `"<title> - <digits>..."` (grouped-button suffix, localized). The whole lookup is best-effort: any failure just yields no badges.
+- When `AzShortcutsEnabled` and `TaskbarBadgesEnabled` (both default on), each window's shortcut key is drawn at the top-left of its taskbar button. Rendering lives in a **separate helper process** (`BadgeOverlay/` -> `switcheroo_plus_badges.exe`, copied next to the main exe at build time) so badge/taskbar bugs can never crash the switcher. `Switcheroo/TaskbarBadgeOverlay.cs` is a thin **named-pipe client** (pipe `switcheroo_plus_badges`): it sends (key, title) pairs, the helper does everything else. The helper starts on first use, is reused across shows, respawns automatically if killed, and exits when the main app exits (`Application.Exit` handler in `MainWindow`).
+- Client calls are fire-and-forget (connect + write + close; only `getbadges` reads a response) and run on a thread-pool thread - a helper that dies mid-conversation must never hang the UI thread.
+- The helper draws **one small opaque, click-through, topmost WPF window per badge** (pooled, fixed 18x19). A single full-screen transparent (layered) overlay renders nowhere on multi-monitor mixed-DPI setups, and small layered windows are clipped by the taskbar on Windows 10 - opaque non-layered windows are the only form verified to show over the taskbar. It also draws a clickable **X chip at the taskbar's top-right corner**; clicking it stops the helper.
+- Badges auto-hide after `TaskbarBadgeTimeoutSeconds` (default 10, 0 = never); the timer lives in the helper and starts only once badges are actually placed. UIA can return no buttons for the first seconds of a cold helper start, so placement retries up to 5 times at 700 ms intervals.
+- Taskbar buttons are located via UI Automation: `FindAll(ControlType.Button)` over every `Shell_TrayWnd` / `Shell_SecondaryTrayWnd` toplevel window. `TB_BUTTONCOUNT`-style toolbar messages return 0 on ExplorerPatcher/reimplemented taskbars - UIA is the reliable path. Button->window matching is by exact title, else `"<title> - <digits>..."` (grouped-button suffix, localized), longest titles first. The whole lookup is best-effort: any failure just yields no badges.
 - Shortcut-key presses resolve by the displayed `ShortcutKey` label (`SwitchToWindowByShortcutKey`), not by list index, so keys stay correct after filtering.
+- **Packaging gap:** `Installer/Build.xml` and the portable zip do not yet include `switcheroo_plus_badges.exe` - badges silently do nothing in those packages until added.
 
 ### Error Handling
 - Minimal try/catch; many P/Invoke calls assume success.
@@ -175,7 +179,8 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 | `Core/WindowFinder.cs` | Enumerates toplevel windows, filters by `IsAltTabWindow` |
 | `Core/WindowFilterer.cs` | Runs matchers and produces ranked `FilterResult<AppWindow>` list |
 | `Core/WinApi.cs` | P/Invoke declarations (`user32.dll`, `kernel32.dll`) and constants |
-| `Switcheroo/TaskbarBadgeOverlay.cs` | Transparent overlay drawing shortcut-key badges on taskbar buttons (UIA button lookup) |
+| `Switcheroo/TaskbarBadgeOverlay.cs` | Pipe client for the badge helper (spawn/reuse, fire-and-forget show/hide) |
+| `BadgeOverlay/Program.cs` | Badge helper process (`switcheroo_plus_badges.exe`): pipe server, UIA taskbar lookup, chip windows, timeout, X close chip |
 | `Core/Matchers/*.cs` | Four scoring matchers and `XamlHighlighter` |
 | `Switcheroo/PortableSettingsProvider.cs` | Custom `SettingsProvider` for portable XML persistence |
 | `Installer/Installer.iss` | Inno Setup installer script |
