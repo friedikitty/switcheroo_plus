@@ -396,5 +396,40 @@ namespace Switcheroo.Core
         [DllImport("user32.dll")]
         public static extern int EnumPropsEx(IntPtr hWnd, EnumPropsExDelegate lpEnumFunc, IntPtr lParam);
         public delegate int EnumPropsExDelegate(IntPtr hwnd, IntPtr lpszString, long hData, long dwData);
+
+        /// <summary>
+        /// Cheap pid lookup for a window - no Process object, no process-list snapshot.
+        /// </summary>
+        public static uint GetWindowProcessId(IntPtr hwnd)
+        {
+            uint pid;
+            GetWindowThreadProcessId(hwnd, out pid);
+            return pid;
+        }
+
+        /// <summary>
+        /// Fast process name for a pid via QueryFullProcessImageName - microseconds,
+        /// works for elevated processes too. Process.GetProcessById snapshots the whole
+        /// process list (~10-30ms per call on busy systems), which made every popup
+        /// take 1-2s when called per window. Returns null on failure.
+        /// </summary>
+        public static string GetProcessName(uint pid)
+        {
+            var handle = OpenProcess(ProcessAccess.QueryLimitedInformation, false, (int)pid);
+            if (handle == IntPtr.Zero)
+                return null;
+            try
+            {
+                var sb = new StringBuilder(1024);
+                int size = sb.Capacity;
+                if (!QueryFullProcessImageName(handle, 0, sb, out size))
+                    return null;
+                return System.IO.Path.GetFileNameWithoutExtension(sb.ToString());
+            }
+            finally
+            {
+                CloseHandle(handle);
+            }
+        }
     }
 }

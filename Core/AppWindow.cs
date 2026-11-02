@@ -47,18 +47,23 @@ namespace Switcheroo.Core
                     {
                         processTitle = "UWP";
 
-                        var underlyingProcess = AllChildWindows.Where(w => w.Process.Id != Process.Id)
-                            .Select(w => w.Process)
-                            .FirstOrDefault();
+                        // Pid-based lookup: SystemWindow.Process is GetProcessById,
+                        // which snapshots the whole process list per call
+                        var myPid = WinApi.GetWindowProcessId(HWnd);
+                        var childPid = AllChildWindows
+                            .Select(w => WinApi.GetWindowProcessId(w.HWnd))
+                            .FirstOrDefault(pid => pid != myPid && pid != 0);
 
-                        if (underlyingProcess != null && underlyingProcess.ProcessName != "")
+                        var childName = childPid == 0 ? null : WinApi.GetProcessName(childPid);
+                        if (!string.IsNullOrEmpty(childName))
                         {
-                            processTitle = underlyingProcess.ProcessName;
+                            processTitle = childName;
                         }
                     }
                     else
                     {
-                        processTitle = Process.ProcessName;
+                        processTitle = WinApi.GetProcessName(WinApi.GetWindowProcessId(HWnd))
+                            ?? Process.ProcessName;
                     }
                     MemoryCache.Default.Add(key, processTitle, DateTimeOffset.Now.AddHours(1));
                 }

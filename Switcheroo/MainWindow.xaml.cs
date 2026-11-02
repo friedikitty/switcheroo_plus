@@ -676,7 +676,11 @@ namespace Switcheroo
 
         private static bool AreWindowsRelated(SystemWindow window1, SystemWindow window2)
         {
-            return window1.HWnd == window2.HWnd || window1.Process.Id == window2.Process.Id;
+            // Compare pids, not Process objects: SystemWindow.Process is
+            // Process.GetProcessById, which snapshots the whole process list
+            // (~10-30ms per call) - it ran per list item on every popup.
+            return window1.HWnd == window2.HWnd
+                || WinApi.GetWindowProcessId(window1.HWnd) == WinApi.GetWindowProcessId(window2.HWnd);
         }
 
         private void FocusItemInList(InitialFocus focus, bool foregroundWindowMovedToBottom)
