@@ -45,8 +45,12 @@
             <TextBlock Margin="25,2,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
                 The previous app stays first so <Span FontFamily="Consolas" FontWeight="Bold">Enter</Span> still switches back to it; the rest of the pinned group is sorted alphabetically to keep the list order stable.
             </TextBlock>
-            <CheckBox Name="TaskbarBadgesCheckBox" Margin="5,5,5,1">Show quick-switch keys on taskbar buttons</CheckBox>
-            <TextBlock Margin="25,0,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
+            <CheckBox Name="TaskbarBadgesCheckBox" Margin="5,5,5,1" Checked="TaskbarBadgesCheckBox_OnChecked" Unchecked="TaskbarBadgesCheckBox_OnUnchecked">Show quick-switch keys on taskbar buttons</CheckBox>
+            <StackPanel Orientation="Horizontal" Margin="25,2,5,0">
+                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Auto-hide badges after (seconds, 0 = never):"/>
+                <TextBox Name="BadgeTimeoutBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Margin="25,2,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
                 While the overlay is open, draw each window's <Span FontFamily="Consolas" FontWeight="Bold">0-9 / a-z / A-Z</Span> key at the top-left corner of its taskbar button. Requires the overlay shortcuts to be enabled.
             </TextBlock>
             <CheckBox Name="OpenUsageHintsByDefaultCheckBox" Margin="5,5,5,1">Open the usage hints by default</CheckBox>

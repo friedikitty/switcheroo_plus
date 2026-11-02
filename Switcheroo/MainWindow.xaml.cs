@@ -72,6 +72,7 @@ namespace Switcheroo
         private AppWindow _currentWindow;
         private AutomationServer _automationServer;
         private TaskbarBadgeOverlay _taskbarBadges;
+        private DispatcherTimer _badgeTimeoutTimer;
         private readonly bool _autoMode;
 
         // Most-recently-used window tracking (front = most recent). Used to keep
@@ -254,6 +255,7 @@ namespace Switcheroo
         {
             if (!_config.TaskbarBadgesEnabled || !_config.AzShortcutsEnabled)
             {
+                StopBadgeTimeout();
                 if (_taskbarBadges != null)
                     _taskbarBadges.Hide();
                 return;
@@ -261,6 +263,32 @@ namespace Switcheroo
             if (_taskbarBadges == null)
                 _taskbarBadges = new TaskbarBadgeOverlay();
             _taskbarBadges.UpdateBadges(_unfilteredWindowList);
+            StartBadgeTimeout();
+        }
+
+        private void StartBadgeTimeout()
+        {
+            StopBadgeTimeout();
+            var seconds = _config.TaskbarBadgeTimeoutSeconds;
+            if (seconds <= 0)
+                return; // 0 = no timeout; badges stay until the overlay closes
+            _badgeTimeoutTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+            _badgeTimeoutTimer.Tick += (sender, args) =>
+            {
+                StopBadgeTimeout();
+                if (_taskbarBadges != null)
+                    _taskbarBadges.Hide();
+            };
+            _badgeTimeoutTimer.Start();
+        }
+
+        private void StopBadgeTimeout()
+        {
+            if (_badgeTimeoutTimer != null)
+            {
+                _badgeTimeoutTimer.Stop();
+                _badgeTimeoutTimer = null;
+            }
         }
 
         private void ActivateAppWindow(AppWindow currentWindow, AppWindow targetWindow, bool hideWindowAfterSwitch)
@@ -748,6 +776,7 @@ namespace Switcheroo
             }
 
             _altTabAutoSwitch = false;
+            StopBadgeTimeout();
             if (_taskbarBadges != null)
                 _taskbarBadges.Hide();
             Opacity = 0;

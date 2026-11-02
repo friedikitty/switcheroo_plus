@@ -70,6 +70,9 @@ namespace Switcheroo
         // Draw the quick-switch key at the top-left of each window's taskbar button
         public bool TaskbarBadgesEnabled { get; set; } = true;
 
+        // Seconds before taskbar badges auto-hide; 0 = stay until the overlay closes
+        public int TaskbarBadgeTimeoutSeconds { get; set; } = 10;
+
         /// <summary>
         /// Legacy config directory used by older builds. Kept for one-time migration.
         /// </summary>
@@ -309,7 +312,10 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"AzShortcutsEnabled\": {0},", Bool(cfg.AzShortcutsEnabled)));
             sb.AppendLine();
             sb.AppendLine("  // Draw the quick-switch key at the top-left of each window's taskbar button");
-            sb.AppendLine(string.Format("  \"TaskbarBadgesEnabled\": {0}", Bool(cfg.TaskbarBadgesEnabled)));
+            sb.AppendLine(string.Format("  \"TaskbarBadgesEnabled\": {0},", Bool(cfg.TaskbarBadgesEnabled)));
+            sb.AppendLine();
+            sb.AppendLine("  // Seconds before taskbar badges auto-hide; 0 = stay until the overlay closes");
+            sb.AppendLine(string.Format("  \"TaskbarBadgeTimeoutSeconds\": {0}", cfg.TaskbarBadgeTimeoutSeconds));
             sb.AppendLine("}");
             return sb.ToString();
         }

@@ -83,6 +83,8 @@ namespace Switcheroo
             AutoSwitch.IsEnabled = _config.AltTabHook;
             AzShortcutsCheckBox.IsChecked = _config.AzShortcutsEnabled;
             TaskbarBadgesCheckBox.IsChecked = _config.TaskbarBadgesEnabled;
+            BadgeTimeoutBox.Text = _config.TaskbarBadgeTimeoutSeconds.ToString();
+            BadgeTimeoutBox.IsEnabled = _config.TaskbarBadgesEnabled;
             OpenUsageHintsByDefaultCheckBox.IsChecked = _config.OpenUsageHintsByDefault;
             MultiColumnCheckBox.IsChecked = _config.MultiColumnEnabled;
             RecentOnTopCheckBox.IsChecked = _config.RecentWindowsOnTopEnabled;
@@ -160,6 +162,10 @@ namespace Switcheroo
             _config.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
             _config.AzShortcutsEnabled = AzShortcutsCheckBox.IsChecked.GetValueOrDefault();
             _config.TaskbarBadgesEnabled = TaskbarBadgesCheckBox.IsChecked.GetValueOrDefault();
+            int badgeTimeout;
+            if (!int.TryParse(BadgeTimeoutBox.Text, out badgeTimeout))
+                badgeTimeout = 10;
+            _config.TaskbarBadgeTimeoutSeconds = Math.Max(0, Math.Min(300, badgeTimeout));
             _config.PreviousAppEnabled = previousAppEnabled;
             _config.PreviousAppAlt = _previousAppViewModel.Alt;
             _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;
@@ -432,6 +438,16 @@ namespace Switcheroo
         private void RecentOnTopCheckBox_OnUnchecked(object sender, RoutedEventArgs e)
         {
             RecentOnTopCountBox.IsEnabled = false;
+        }
+
+        private void TaskbarBadgesCheckBox_OnChecked(object sender, RoutedEventArgs e)
+        {
+            BadgeTimeoutBox.IsEnabled = true;
+        }
+
+        private void TaskbarBadgesCheckBox_OnUnchecked(object sender, RoutedEventArgs e)
+        {
+            BadgeTimeoutBox.IsEnabled = false;
         }
 
         private void HotKeyCheckBox_OnUnchecked(object sender, RoutedEventArgs e)
