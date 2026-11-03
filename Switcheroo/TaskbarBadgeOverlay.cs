@@ -51,6 +51,17 @@ namespace Switcheroo
                 Call(new Dictionary<string, object> { { "action", "hide" } }));
         }
 
+        /// <summary>
+        /// Cache-only warm-up: starts the helper if needed and asks it to scan
+        /// the taskbar once, so the first hotkey can draw badges from the cache
+        /// instead of waiting for UI Automation.
+        /// </summary>
+        public void WarmUp()
+        {
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                Call(new Dictionary<string, object> { { "action", "warm" } }));
+        }
+
         /// <summary>Stops the helper process; it restarts on the next UpdateBadges.</summary>
         public void Close()
         {

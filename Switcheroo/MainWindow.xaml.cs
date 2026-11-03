@@ -72,6 +72,7 @@ namespace Switcheroo
         private AppWindow _currentWindow;
         private AutomationServer _automationServer;
         private TaskbarBadgeOverlay _taskbarBadges;
+        private DispatcherTimer _badgeWarmUpTimer;
         private readonly bool _autoMode;
 
         // Most-recently-used window tracking (front = most recent). Used to keep
@@ -102,6 +103,7 @@ namespace Switcheroo
             SetUpAltTabHook();
 
             SetUpForegroundTracking();
+            ScheduleTaskbarBadgeWarmUp();
 
             if (!_autoMode)
                 CheckForUpdates();
@@ -269,6 +271,38 @@ namespace Switcheroo
                 _taskbarBadges = new TaskbarBadgeOverlay();
             // The helper process owns the auto-hide timeout; 0 = stay until hidden
             _taskbarBadges.UpdateBadges(_unfilteredWindowList, _config.TaskbarBadgeTimeoutSeconds);
+        }
+
+        /// <summary>
+        /// Starts the helper shortly after launch (when badges are enabled) and
+        /// has it cache the taskbar button geometry, so the first hotkey draws
+        /// badges immediately instead of waiting ~1 s for UI Automation.
+        /// Deferred: startup must never block on the helper's cold WPF start.
+        /// </summary>
+        private void ScheduleTaskbarBadgeWarmUp()
+        {
+            if (!_config.TaskbarBadgesEnabled || !_config.AzShortcutsEnabled)
+                return;
+            if (_badgeWarmUpTimer == null)
+            {
+                _badgeWarmUpTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                _badgeWarmUpTimer.Tick += (sender, args) =>
+                {
+                    _badgeWarmUpTimer.Stop();
+                    WarmUpTaskbarBadges();
+                };
+            }
+            _badgeWarmUpTimer.Stop();
+            _badgeWarmUpTimer.Start();
+        }
+
+        private void WarmUpTaskbarBadges()
+        {
+            if (!_config.TaskbarBadgesEnabled || !_config.AzShortcutsEnabled)
+                return;
+            if (_taskbarBadges == null)
+                _taskbarBadges = new TaskbarBadgeOverlay();
+            _taskbarBadges.WarmUp();
         }
 
         private void ActivateAppWindow(AppWindow currentWindow, AppWindow targetWindow, bool hideWindowAfterSwitch)
@@ -847,6 +881,11 @@ namespace Switcheroo
             }
             _hotkey.Dispose();
             DisposePreviousAppHook();
+            if (_badgeWarmUpTimer != null)
+            {
+                _badgeWarmUpTimer.Stop();
+                _badgeWarmUpTimer = null;
+            }
             if (_taskbarBadges != null)
             {
                 _taskbarBadges.Close();
@@ -885,6 +924,9 @@ namespace Switcheroo
                 SetUpPreviousAppLowLevelHook();
 
             SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
+
+            // Options may have just enabled badges/shortcuts: warm the helper again
+            ScheduleTaskbarBadgeWarmUp();
         }
 
         #region Automation API
