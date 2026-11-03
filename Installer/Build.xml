@@ -18,6 +18,10 @@
   </Target>
   
   <Target Name="CreateSetup">
+    <!-- Build the badge helper first: the installer picks up *.exe from the app's bin folder -->
+    <MSBuild Projects="$(SolutionDir)\BadgeOverlay\BadgeOverlay.csproj"
+             Targets="$(BuildTarget)"
+             Properties="Configuration=$(Configuration);" />
     <MSBuild Projects="$(SolutionDir)\Switcheroo\Switcheroo.csproj"
              Targets="$(BuildTarget)"
              Properties="Configuration=$(Configuration);" />
@@ -34,6 +38,9 @@
   </Target>
   
   <Target Name="CreatePortable">
+    <MSBuild Projects="$(SolutionDir)\BadgeOverlay\BadgeOverlay.csproj"
+             Targets="$(BuildTarget)"
+             Properties="Configuration=$(Configuration);" />
     <MSBuild Projects="$(SolutionDir)\Switcheroo\Switcheroo.csproj"
              Targets="$(BuildTarget)"
              Properties="Configuration=$(Configuration);DefineConstants=PORTABLE" />

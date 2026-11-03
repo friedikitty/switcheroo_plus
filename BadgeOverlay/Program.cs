@@ -76,9 +76,8 @@ namespace SwitcherooBadgeOverlay
         // ----- current show state -----
         private static List<WindowRequest> currentWindows = new List<WindowRequest>();
         private static int currentTimeout;
-        private static int showGeneration;
         private static bool badgesSuppressed;
-        private static bool timeoutStartedForGeneration;
+        private static bool timeoutStartedForShow;
 
         // ----- chip pre-creation (startup warm-up, background priority) -----
         private static int precreateTarget;
@@ -190,20 +189,26 @@ namespace SwitcherooBadgeOverlay
                     object winsObj;
                     if (request.TryGetValue("windows", out winsObj))
                     {
-                        foreach (var item in (System.Collections.IEnumerable)winsObj)
+                        var items = winsObj as System.Collections.IEnumerable;
+                        if (items != null)
                         {
-                            var dict = (Dictionary<string, object>)item;
-                            object keyObj, titleObj;
-                            dict.TryGetValue("key", out keyObj);
-                            dict.TryGetValue("title", out titleObj);
-                            var title = Convert.ToString(titleObj) ?? "";
-                            if (string.IsNullOrEmpty(title))
-                                continue;
-                            windows.Add(new WindowRequest
+                            foreach (var item in items)
                             {
-                                Key = Convert.ToString(keyObj) ?? "",
-                                Title = title
-                            });
+                                var dict = item as Dictionary<string, object>;
+                                if (dict == null)
+                                    continue;
+                                object keyObj, titleObj;
+                                dict.TryGetValue("key", out keyObj);
+                                dict.TryGetValue("title", out titleObj);
+                                var title = Convert.ToString(titleObj) ?? "";
+                                if (string.IsNullOrEmpty(title))
+                                    continue;
+                                windows.Add(new WindowRequest
+                                {
+                                    Key = Convert.ToString(keyObj) ?? "",
+                                    Title = title
+                                });
+                            }
                         }
                     }
                     // Acknowledge first: placement and the UIA refresh happen on
@@ -293,9 +298,8 @@ namespace SwitcherooBadgeOverlay
 
         private static void ShowBadges(List<WindowRequest> windows, int timeoutSeconds)
         {
-            showGeneration++;
             badgesSuppressed = false;
-            timeoutStartedForGeneration = false;
+            timeoutStartedForShow = false;
             currentWindows = windows;
             currentTimeout = timeoutSeconds;
 
@@ -336,24 +340,22 @@ namespace SwitcherooBadgeOverlay
                 staleReason = "signature";
             else if (!scannedTitlesKnown)
                 staleReason = "unknown-titles";
+            else if (!SameTitles(titles, scannedTitles))
+                // A window opened, closed or was retitled: button rects may have
+                // shifted, so the cached geometry needs one more look.
+                staleReason = "titles";
+            else if ((DateTime.UtcNow - lastRefreshUtc).TotalMilliseconds > CacheMaxAgeMs)
+                staleReason = "age";
             else
-            {
-                // Only a window that the last scan did not see can need a badge
-                // it has no cached button for; closing a window needs no rescan.
                 staleReason = "";
-                foreach (var title in titles)
-                    if (!scannedTitles.Contains(title))
-                    {
-                        staleReason = "new-title";
-                        break;
-                    }
-                if (staleReason.Length == 0 &&
-                    (DateTime.UtcNow - lastRefreshUtc).TotalMilliseconds > CacheMaxAgeMs)
-                    staleReason = "age";
-            }
             lastStaleReason = staleReason;
             if (staleReason.Length > 0)
-                QueueRefresh(showGeneration, titles);
+                QueueRefresh(titles);
+        }
+
+        private static bool SameTitles(HashSet<string> a, HashSet<string> b)
+        {
+            return a.SetEquals(b);
         }
 
         private static void HideFromClient()
@@ -372,9 +374,9 @@ namespace SwitcherooBadgeOverlay
 
         private static void StartTimeoutIfNeeded()
         {
-            if (timeoutStartedForGeneration)
+            if (timeoutStartedForShow)
                 return;
-            timeoutStartedForGeneration = true;
+            timeoutStartedForShow = true;
             if (currentTimeout <= 0)
                 return;
             if (timeoutTimer == null)
@@ -395,6 +397,9 @@ namespace SwitcherooBadgeOverlay
         /// <summary>Cache-only scan at startup so the first hotkey draws instantly.</summary>
         private static void WarmUp()
         {
+            // Cover a typical taskbar even before the first scan lands: a chip
+            // created inside a show blocks that show, a background one does not.
+            PrecreateChips(16);
             if (cachedButtons.Count > 0 &&
                 (DateTime.UtcNow - lastRefreshUtc).TotalMilliseconds < CacheMaxAgeMs)
             {
@@ -403,10 +408,10 @@ namespace SwitcherooBadgeOverlay
             }
             if (ComputeTraySignature().Length == 0)
                 return;
-            QueueRefresh(showGeneration, null);
+            QueueRefresh(null);
         }
 
-        private static void QueueRefresh(int generation, HashSet<string> titles)
+        private static void QueueRefresh(HashSet<string> titles)
         {
             // A UIA scan costs a second or more; never run them back to back. A
             // later show re-checks the staleness condition on its own.
@@ -422,7 +427,7 @@ namespace SwitcherooBadgeOverlay
 
             refreshRunning = true;
             lastScanStartUtc = DateTime.UtcNow;
-            var worker = new Thread(() => ScanTaskbar(generation, titles, signature))
+            var worker = new Thread(() => ScanTaskbar(titles, signature))
             {
                 IsBackground = true,
                 Name = "BadgeUiaScan"
@@ -434,7 +439,7 @@ namespace SwitcherooBadgeOverlay
         /// UI Automation on a background (MTA) thread - never on the dispatcher,
         /// which would block both the pipe server and the overlay.
         /// </summary>
-        private static void ScanTaskbar(int generation, HashSet<string> titles, string signatureAtRequest)
+        private static void ScanTaskbar(HashSet<string> titles, string signatureAtRequest)
         {
             var sw = Stopwatch.StartNew();
             var buttons = new List<TaskbarButton>();
@@ -458,11 +463,11 @@ namespace SwitcherooBadgeOverlay
             sw.Stop();
 
             app.Dispatcher.BeginInvoke(new Action(() =>
-                OnScanComplete(buttons, signature, sw.ElapsedMilliseconds, generation, titles)));
+                OnScanComplete(buttons, signature, sw.ElapsedMilliseconds, titles)));
         }
 
         private static void OnScanComplete(List<TaskbarButton> buttons, string signature, long elapsedMs,
-            int generation, HashSet<string> titles)
+            HashSet<string> titles)
         {
             refreshRunning = false;
             lastRefreshMs = elapsedMs;
@@ -479,10 +484,11 @@ namespace SwitcherooBadgeOverlay
             // On an empty scan keep the previous cache: the next show can still
             // draw from it, and the stale timestamp makes it retry the scan.
 
-            var stillLive = generation == showGeneration
-                            && !badgesSuppressed
-                            && currentWindows.Count > 0;
-            if (stillLive && cachedButtons.Count > 0 && ComputeTraySignature() == cachedTraySignature)
+            // A scan result is a geometry update, not a reply to one particular
+            // show: place whatever is on screen right now (unless it was hidden
+            // or the timeout already cleared it).
+            if (!badgesSuppressed && currentWindows.Count > 0 &&
+                cachedButtons.Count > 0 && ComputeTraySignature() == cachedTraySignature)
             {
                 var placed = PlaceBadges(currentWindows, cachedButtons);
                 if (placed)
@@ -491,7 +497,6 @@ namespace SwitcherooBadgeOverlay
                     StartTimeoutIfNeeded();
                 }
             }
-
         }
 
         /// <summary>
@@ -552,8 +557,9 @@ namespace SwitcherooBadgeOverlay
             var positions = new Dictionary<string, int[]>();
             foreach (var window in keyed)
             {
-                if (string.IsNullOrEmpty(window.Key))
-                    continue;
+                if (window.Key == null || window.Key.Length != 1 ||
+                    KeyOrder.IndexOf(window.Key[0]) < 0)
+                    continue; // only the overlay's own shortcut keys can have a chip
                 for (var i = 0; i < buttons.Count; i++)
                 {
                     if (used[i] || !NameMatchesTitle(buttons[i].Name, window.Title))
@@ -570,6 +576,11 @@ namespace SwitcherooBadgeOverlay
                 }
             }
 
+            // Chips that pre-creation has not reached yet must exist before the
+            // move batch, otherwise the badge is silently skipped this show.
+            foreach (var key in positions.Keys)
+                GetChip(key);
+
             ApplyPositions(positions, positions.Count > 0);
             sw.Stop();
             lastPlaceMs = sw.ElapsedMilliseconds;
@@ -579,78 +590,126 @@ namespace SwitcherooBadgeOverlay
         /// <summary>
         /// Moves every chip (and the close chip) to its target in one
         /// DeferWindowPos batch: per-window SetWindowPos calls each cost a few ms,
-        /// a single batch does not.
+        /// a single batch does not. A failed batch is abandoned (never passed to
+        /// EndDeferWindowPos, per the Win32 contract) and the moves are applied
+        /// directly instead.
         /// </summary>
         private static void ApplyPositions(Dictionary<string, int[]> positions, bool showCloseChip)
         {
             if (showCloseChip)
                 EnsureCloseChip();
-            var moves = 0;
-            var moveWatch = Stopwatch.StartNew();
-            var hdwp = BeginDeferWindowPos(ChipsByKey.Count + 1);
-            if (hdwp == IntPtr.Zero)
-                return;
 
+            var moveWatch = Stopwatch.StartNew();
+
+            var slots = new List<Slot>();
             foreach (var key in KeyOrder)
             {
-                var chipKey = key.ToString();
                 Chip chip;
+                if (!ChipsByKey.TryGetValue(key.ToString(), out chip))
+                {
+                    // Never create chips from here: hide must not allocate.
+                    continue;
+                }
                 int[] position;
-                if (!ChipsByKey.TryGetValue(chipKey, out chip))
-                    continue;
-                var visible = positions.TryGetValue(chipKey, out position);
-                var x = visible ? position[0] : OffScreen;
-                var y = visible ? position[1] : OffScreen;
-                if (chip.X == x && chip.Y == y)
+                var visible = positions.TryGetValue(key.ToString(), out position);
+                slots.Add(new Slot
                 {
-                    chip.Visible = visible;
-                    continue;
-                }
-                var next = DeferWindowPos(hdwp, chip.Handle, IntPtr.Zero, x, y, 0, 0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-                if (next == IntPtr.Zero)
-                {
-                    // Batch failed mid-way; fall back to a direct move for this chip
-                    SetWindowPos(chip.Handle, IntPtr.Zero, x, y, 0, 0,
-                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-                }
-                else
-                {
-                    hdwp = next;
-                }
-                chip.X = x;
-                chip.Y = y;
-                chip.Visible = visible;
-                moves++;
+                    Chip = chip,
+                    X = visible ? position[0] : OffScreen,
+                    Y = visible ? position[1] : OffScreen,
+                    Visible = visible
+                });
             }
 
             if (closeChip != null)
             {
-                var tray = FindWindow("Shell_TrayWnd", null);
-                RECT rect;
-                var x = OffScreen;
-                var y = OffScreen;
-                if (showCloseChip && tray != IntPtr.Zero && GetWindowRect(tray, out rect))
+                int[] closeTarget = CloseChipTarget(showCloseChip);
+                slots.Add(new Slot
                 {
-                    x = rect.Right - 20;
-                    y = rect.Top + 2;
-                }
-                var next = DeferWindowPos(hdwp, closeChip.Handle, IntPtr.Zero, x, y, 0, 0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-                if (next == IntPtr.Zero)
-                    SetWindowPos(closeChip.Handle, IntPtr.Zero, x, y, 0, 0,
-                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-                else
-                    hdwp = next;
-                closeChip.X = x;
-                closeChip.Y = y;
-                closeChip.Visible = showCloseChip;
+                    Chip = closeChip,
+                    X = closeTarget[0],
+                    Y = closeTarget[1],
+                    Visible = showCloseChip
+                });
             }
 
-            EndDeferWindowPos(hdwp);
+            var moves = new List<Slot>();
+            foreach (var slot in slots)
+                if (slot.Chip.X != slot.X || slot.Chip.Y != slot.Y)
+                    moves.Add(slot);
+
+            if (moves.Count > 0)
+                ApplyMoves(moves);
+
+            foreach (var slot in slots)
+                if (slot.Chip.X == slot.X && slot.Chip.Y == slot.Y)
+                    slot.Chip.Visible = slot.Visible;
+
             moveWatch.Stop();
-            lastMoves = moves;
+            lastMoves = moves.Count;
             lastMoveMs = moveWatch.ElapsedMilliseconds;
+        }
+
+        private static int[] CloseChipTarget(bool visible)
+        {
+            var tray = FindWindow("Shell_TrayWnd", null);
+            RECT rect;
+            if (visible && tray != IntPtr.Zero && GetWindowRect(tray, out rect))
+                return new[] { rect.Right - 20, rect.Top + 2 };
+            return new[] { OffScreen, OffScreen };
+        }
+
+        private static void ApplyMoves(List<Slot> moves)
+        {
+            var hdwp = BeginDeferWindowPos(moves.Count);
+            var batched = hdwp != IntPtr.Zero;
+            if (batched)
+            {
+                foreach (var slot in moves)
+                {
+                    var next = DeferWindowPos(hdwp, slot.Chip.Handle, IntPtr.Zero,
+                        slot.X, slot.Y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                    if (next == IntPtr.Zero)
+                    {
+                        // Leave the failed batch alone: the API forbids ending it
+                        batched = false;
+                        break;
+                    }
+                    hdwp = next;
+                }
+                if (batched)
+                    batched = EndDeferWindowPos(hdwp);
+            }
+
+            if (batched)
+            {
+                foreach (var slot in moves)
+                {
+                    slot.Chip.X = slot.X;
+                    slot.Chip.Y = slot.Y;
+                }
+                return;
+            }
+
+            // Direct fallback: apply every intended move, keep coordinates only
+            // for the windows that actually moved.
+            foreach (var slot in moves)
+            {
+                if (SetWindowPos(slot.Chip.Handle, IntPtr.Zero, slot.X, slot.Y, 0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE))
+                {
+                    slot.Chip.X = slot.X;
+                    slot.Chip.Y = slot.Y;
+                }
+            }
+        }
+
+        private class Slot
+        {
+            public Chip Chip;
+            public int X;
+            public int Y;
+            public bool Visible;
         }
 
         private static HashSet<string> Titles(List<WindowRequest> windows)
@@ -779,50 +838,56 @@ namespace SwitcherooBadgeOverlay
         }
 
         /// <summary>
-        /// Cheap identity of the current taskbar layout: handles + rects of the
-        /// primary and (if present) secondary tray. A moved/resized taskbar,
-        /// explorer restart or monitor change yields a different signature, so
-        /// cached button rects are never reused for a stale geometry.
-        /// Empty string = no visible taskbar.
+        /// Every visible taskbar (the primary one plus all secondary monitors),
+        /// ordered by handle so the signature is stable.
+        /// </summary>
+        private static List<IntPtr> TrayHandles()
+        {
+            var trays = new List<IntPtr>();
+            var primary = FindWindow("Shell_TrayWnd", null);
+            if (primary != IntPtr.Zero && IsWindowVisible(primary))
+                trays.Add(primary);
+            var previous = IntPtr.Zero;
+            while (true)
+            {
+                var next = FindWindowEx(IntPtr.Zero, previous, "Shell_SecondaryTrayWnd", null);
+                if (next == IntPtr.Zero)
+                    break;
+                if (IsWindowVisible(next))
+                    trays.Add(next);
+                previous = next;
+            }
+            trays.Sort((a, b) => a.ToInt64().CompareTo(b.ToInt64()));
+            return trays;
+        }
+
+        /// <summary>
+        /// Cheap identity of the current taskbar layout: handles + rects of every
+        /// visible tray. A moved/resized taskbar, explorer restart or monitor
+        /// change yields a different signature, so cached button rects are never
+        /// reused for a stale geometry. Empty string = no visible taskbar.
         /// </summary>
         private static string ComputeTraySignature()
         {
             var sb = new StringBuilder();
-            var tray = FindWindow("Shell_TrayWnd", null);
-            if (tray == IntPtr.Zero || !IsWindowVisible(tray))
-                return "";
-            AppendTray(sb, tray);
-            var secondary = FindWindow("Shell_SecondaryTrayWnd", null);
-            if (secondary != IntPtr.Zero && IsWindowVisible(secondary))
-                AppendTray(sb, secondary);
+            foreach (var tray in TrayHandles())
+            {
+                RECT rect;
+                if (!GetWindowRect(tray, out rect))
+                    continue;
+                sb.Append(tray.ToInt64()).Append(':')
+                    .Append(rect.Left).Append(',').Append(rect.Top).Append(',')
+                    .Append(rect.Right).Append(',').Append(rect.Bottom).Append(';');
+            }
             return sb.ToString();
-        }
-
-        private static void AppendTray(StringBuilder sb, IntPtr hwnd)
-        {
-            RECT rect;
-            if (!GetWindowRect(hwnd, out rect))
-                return;
-            sb.Append(hwnd.ToInt64()).Append(':')
-                .Append(rect.Left).Append(',').Append(rect.Top).Append(',')
-                .Append(rect.Right).Append(',').Append(rect.Bottom).Append(';');
         }
 
         private static List<TaskbarButton> FindTaskbarButtons(out string signature)
         {
             var buttons = new List<TaskbarButton>();
             signature = ComputeTraySignature();
-            var tray = FindWindow("Shell_TrayWnd", null);
-            for (var i = 0; i < 2; i++)
+            foreach (var tray in TrayHandles())
             {
-                if (i == 1)
-                {
-                    tray = FindWindow("Shell_SecondaryTrayWnd", null);
-                    if (tray == IntPtr.Zero)
-                        break;
-                }
-                if (tray == IntPtr.Zero)
-                    continue;
                 AutomationElementCollection elements;
                 try
                 {
@@ -860,6 +925,9 @@ namespace SwitcherooBadgeOverlay
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr FindWindow(string className, string windowName);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string windowName);
 
         [DllImport("user32.dll")]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);

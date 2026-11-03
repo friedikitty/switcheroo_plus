@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
+using System.Threading;
 using Switcheroo.Automation;
 
 namespace Switcheroo
@@ -15,11 +16,27 @@ namespace Switcheroo
     /// the switcher. It is started once on demand and reused; if it died, the
     /// next call respawns it. All calls are best-effort: any failure just
     /// yields no badges.
+    ///
+    /// Commands go through one FIFO queue drained by a single background
+    /// thread, so show/hide keep their submission order (thread-pool callbacks
+    /// racing for a lock do not). Nothing here is allowed to block the UI
+    /// thread: sends are fire-and-forget with a connect timeout, the only
+    /// response read (`getbadges`, a test hook) is bounded, and Close() neither
+    /// spawns nor waits for a helper that stopped answering.
     /// </summary>
     public class TaskbarBadgeOverlay
     {
         private const string PipeName = "switcheroo_plus_badges";
         private const string HelperExeName = "switcheroo_plus_badges.exe";
+        private const int ConnectTimeoutMs = 300;
+        private const int ResponseTimeoutMs = 1000;
+        private const int HelperStartTimeoutMs = 5000;
+        private const int ShutdownTimeoutMs = 500;
+
+        private readonly object _sync = new object();
+        private readonly Queue<Dictionary<string, object>> _queue = new Queue<Dictionary<string, object>>();
+        private Thread _worker;
+        private bool _closing;
 
         public void UpdateBadges(IList<AppWindowViewModel> windows, int timeoutSeconds)
         {
@@ -34,21 +51,17 @@ namespace Switcheroo
                     { "title", window.AppWindow.Title ?? "" }
                 });
             }
-            var request = new Dictionary<string, object>
+            Enqueue(new Dictionary<string, object>
             {
                 { "action", "show" },
                 { "timeout", timeoutSeconds },
                 { "windows", payload }
-            };
-            // First contact cold-starts the helper (WPF + UIA take seconds);
-            // never block the UI thread on that
-            System.Threading.ThreadPool.QueueUserWorkItem(_ => Call(request));
+            });
         }
 
         public void Hide()
         {
-            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
-                Call(new Dictionary<string, object> { { "action", "hide" } }));
+            Enqueue(new Dictionary<string, object> { { "action", "hide" } });
         }
 
         /// <summary>
@@ -58,20 +71,42 @@ namespace Switcheroo
         /// </summary>
         public void WarmUp()
         {
-            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
-                Call(new Dictionary<string, object> { { "action", "warm" } }));
+            Enqueue(new Dictionary<string, object> { { "action", "warm" } });
         }
 
-        /// <summary>Stops the helper process; it restarts on the next UpdateBadges.</summary>
+        /// <summary>
+        /// Stops the helper process; it restarts on the next UpdateBadges. Bounded
+        /// and spawn-free: shutdown must never wait on a helper that stopped
+        /// answering, and nothing queued may bring it back afterwards.
+        /// </summary>
         public void Close()
         {
-            Call(new Dictionary<string, object> { { "action", "exit" } });
+            lock (_sync)
+            {
+                _closing = true;
+                _queue.Clear();
+                Monitor.PulseAll(_sync);
+            }
+            var request = new Dictionary<string, object> { { "action", "exit" } };
+            var sender = new Thread(() => TrySend(request))
+            {
+                IsBackground = true,
+                Name = "BadgePipeShutdown"
+            };
+            sender.Start();
+            sender.Join(ShutdownTimeoutMs);
         }
 
         public List<Dictionary<string, string>> GetBadgeList()
         {
             var result = new List<Dictionary<string, string>>();
-            var response = Call(new Dictionary<string, object> { { "action", "getbadges" } });
+            lock (_sync)
+            {
+                if (_closing)
+                    return result;
+            }
+            var response = RequestWithResponse(
+                new Dictionary<string, object> { { "action", "getbadges" } }, ResponseTimeoutMs);
             string badges;
             if (response == null || !response.TryGetValue("badges", out badges))
                 return result;
@@ -91,42 +126,123 @@ namespace Switcheroo
             return result;
         }
 
-        private readonly object _sync = new object();
-
-        private Dictionary<string, string> Call(Dictionary<string, object> request)
+        private bool IsClosing()
         {
-            // Serialize calls so rapid show/hide pairs reach the helper in order
+            lock (_sync)
+                return _closing;
+        }
+
+        private void Enqueue(Dictionary<string, object> request)
+        {
             lock (_sync)
             {
-                var response = Roundtrip(request);
-                if (response != null)
-                    return response;
-                if (!EnsureHelper())
-                    return null;
-                return Roundtrip(request);
+                if (_closing)
+                    return;
+                _queue.Enqueue(request);
+                if (_worker == null)
+                {
+                    _worker = new Thread(WorkerLoop)
+                    {
+                        IsBackground = true,
+                        Name = "BadgePipeClient"
+                    };
+                    _worker.Start();
+                }
+                Monitor.Pulse(_sync);
             }
         }
 
-        private static Dictionary<string, string> Roundtrip(Dictionary<string, object> request)
+        private void WorkerLoop()
+        {
+            while (true)
+            {
+                Dictionary<string, object> request;
+                lock (_sync)
+                {
+                    while (!_closing && _queue.Count == 0)
+                        Monitor.Wait(_sync);
+                    if (_queue.Count == 0)
+                        return; // closing with nothing left to send
+                    request = _queue.Dequeue();
+                }
+                SendWithSpawn(request);
+            }
+        }
+
+        private void SendWithSpawn(Dictionary<string, object> request)
+        {
+            if (TrySend(request))
+                return;
+            if (IsClosing())
+                return;
+            if (!EnsureHelper())
+                return;
+            TrySend(request);
+        }
+
+        /// <summary>
+        /// Fire-and-forget: connect + write + close. Only `getbadges` reads an
+        /// answer, and that goes through <see cref="RequestWithResponse"/>, so a
+        /// helper that dies mid-conversation can never hang the UI thread.
+        /// </summary>
+        private static bool TrySend(Dictionary<string, object> request)
         {
             NamedPipeClientStream pipe = null;
             try
             {
                 pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
-                pipe.Connect(300);
+                pipe.Connect(ConnectTimeoutMs);
                 var bytes = new UTF8Encoding(false).GetBytes(JsonHelper.Encode(request) + "\n");
                 pipe.Write(bytes, 0, bytes.Length);
                 pipe.Flush();
-                // No WaitForPipeDrain/ReadLine for fire-and-forget actions:
-                // reading can hang if the helper dies mid-conversation.
-                var action = Convert.ToString(request["action"]);
-                if (action != "getbadges")
-                    return new Dictionary<string, string> { { "ok", "true" } };
-                using (var reader = new StreamReader(pipe, new UTF8Encoding(false)))
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                try { if (pipe != null) pipe.Dispose(); }
+                catch { }
+            }
+        }
+
+        private static Dictionary<string, string> RequestWithResponse(Dictionary<string, object> request,
+            int timeoutMs)
+        {
+            NamedPipeClientStream pipe = null;
+            try
+            {
+                pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
+                pipe.Connect(ConnectTimeoutMs);
+                var bytes = new UTF8Encoding(false).GetBytes(JsonHelper.Encode(request) + "\n");
+                pipe.Write(bytes, 0, bytes.Length);
+                pipe.Flush();
+
+                // Read on a helper thread so a stuck pipe can be abandoned; the
+                // pipe is disposed if the deadline passes, which unblocks it.
+                string line = null;
+                var local = pipe;
+                var reader = new Thread(() =>
                 {
-                    var line = reader.ReadLine();
-                    return line == null ? null : JsonHelper.Decode(line);
-                }
+                    try
+                    {
+                        using (var streamReader = new StreamReader(local, new UTF8Encoding(false)))
+                            line = streamReader.ReadLine();
+                    }
+                    catch
+                    {
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "BadgePipeRead"
+                };
+                reader.Start();
+                if (!reader.Join(timeoutMs))
+                    return null;
+                return line == null ? null : JsonHelper.Decode(line);
             }
             catch
             {
@@ -139,10 +255,8 @@ namespace Switcheroo
             }
         }
 
-        private static bool EnsureHelper()
+        private bool EnsureHelper()
         {
-            if (Ping())
-                return true;
             try
             {
                 var exe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, HelperExeName);
@@ -154,25 +268,23 @@ namespace Switcheroo
                     UseShellExecute = false,
                     CreateNoWindow = true
                 });
+                // A second copy exits immediately on its single-instance mutex.
             }
             catch
             {
-                return false;
+                // Fall through to the ping poll: the helper may already be up
             }
-            // Poll until the helper's pipe server is up (cold WPF start can take seconds)
-            for (var i = 0; i < 100; i++)
+            // Poll until the helper's pipe accepts a line (cold WPF start is slow)
+            var deadline = Environment.TickCount + HelperStartTimeoutMs;
+            while (Environment.TickCount < deadline)
             {
-                if (Ping())
+                if (IsClosing())
+                    return false;
+                if (TrySend(new Dictionary<string, object> { { "action", "ping" } }))
                     return true;
-                System.Threading.Thread.Sleep(100);
+                Thread.Sleep(100);
             }
             return false;
-        }
-
-        private static bool Ping()
-        {
-            var response = Roundtrip(new Dictionary<string, object> { { "action", "ping" } });
-            return response != null && response.ContainsKey("ok");
         }
     }
 }
