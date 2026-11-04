@@ -102,7 +102,7 @@ packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\
 Run application:
 
 ```powershell
-Switcheroo\bin\Debug\switcheroo.exe
+Switcheroo\bin\Debug\switcheroo_plus.exe
 ```
 
 ---
@@ -226,7 +226,7 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 ## CI/CD
 
 - `.github/workflows/build.yml` runs on pushes/PRs to `master` (and `workflow_dispatch`): `nuget restore` → `msbuild` Debug → NUnit console runner → uploads `TestResult.xml`.
-- `.github/workflows/release.yml` runs on **tag pushes matching `v*`** (and manual dispatch with a tag): stamps `AssemblyVersion`/`AssemblyFileVersion` from the tag, builds Release, runs tests, packages `Installer\Output\switcheroo-portable.zip` and `Installer\switcheroo-setup.exe` (bundled ISCC, `Installer/Build.xml`), then creates the GitHub release with both files via `gh release create` and the workflow's `GITHUB_TOKEN`.
+- `.github/workflows/release.yml` runs on **tag pushes matching `v*`** (and manual dispatch with a tag): stamps `AssemblyVersion`/`AssemblyFileVersion` from the tag, builds Release, runs tests, packages `Installer\Output\switcheroo-portable.zip` and `Installer\Output\switcheroo-setup.exe` (bundled ISCC, `Installer/Build.xml`), then creates the GitHub release with both files via `gh release create` and the workflow's `GITHUB_TOKEN`.
 - Nothing is built by CI before a tag is pushed; a tag only triggers workflows that already exist in the tagged commit.
 - Checking a run (the repo owner's token, not the ambient gh account): `gh run list --workflow release.yml`, `gh run watch <id> --exit-status` (non-zero on failure), `gh run view <id> --log-failed`, `gh release view <tag> --json assets`.
 - `packages/` is not tracked: local builds and CI both need `nuget restore Switcheroo.sln` first (the low-priority `build.ps1` assumes it).
