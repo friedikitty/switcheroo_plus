@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>SwitcherooBadgeOverlay</RootNamespace>
     <AssemblyName>switcheroo_plus_badges</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -45,8 +45,10 @@
     <Compile Include="Program.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup Condition="'$(SolutionDir)' != ''">
-    <PostBuildEvent>if not exist "$(SolutionDir)Switcheroo\bin\$(ConfigurationName)\" mkdir "$(SolutionDir)Switcheroo\bin\$(ConfigurationName)\"
-copy /y "$(TargetPath)" "$(SolutionDir)Switcheroo\bin\$(ConfigurationName)\"</PostBuildEvent>
+  <PropertyGroup>
+    <!-- Deterministic copy next to the app, whether built from the solution or
+         from Installer\Build.xml (where $(SolutionDir) is *Undefined*). -->
+    <PostBuildEvent>if not exist "$(ProjectDir)..\Switcheroo\bin\$(ConfigurationName)\" mkdir "$(ProjectDir)..\Switcheroo\bin\$(ConfigurationName)\"
+copy /y "$(TargetPath)" "$(ProjectDir)..\Switcheroo\bin\$(ConfigurationName)\"</PostBuildEvent>
   </PropertyGroup>
 </Project>

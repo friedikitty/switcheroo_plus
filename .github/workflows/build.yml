@@ -1,0 +1,37 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore packages
+        run: nuget restore Switcheroo.sln
+
+      - name: Build (Debug)
+        run: msbuild Switcheroo.sln /p:Configuration=Debug /p:UseSharedCompilation=false /v:m /nologo
+
+      - name: Unit tests
+        run: packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\Debug\Switcheroo.Core.UnitTests.dll --result=TestResult.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResult.xml
+          if-no-files-found: ignore

@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build, e.g. v0.11.2
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore packages
+        run: nuget restore Switcheroo.sln
+
+      - name: Stamp version from tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) { $tag = "${{ github.ref_name }}" }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "unexpected tag '$tag'" }
+          $ver = ($tag -replace '^v', '') + '.0'
+          $path = 'Switcheroo/Properties/AssemblyInfo.cs'
+          $text = Get-Content $path -Raw
+          $text = $text -replace 'AssemblyVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyVersion(`"$ver`")"
+          $text = $text -replace 'AssemblyFileVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyFileVersion(`"$ver`")"
+          Set-Content -Path $path -Value $text -NoNewline
+          "Stamped $ver into $path"
+
+      - name: Build (Release)
+        run: msbuild Switcheroo.sln /p:Configuration=Release /p:UseSharedCompilation=false /v:m /nologo
+
+      - name: Unit tests
+        run: packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\Release\Switcheroo.Core.UnitTests.dll --result=TestResult.xml
+
+      - name: Package portable zip
+        run: msbuild Installer\Build.xml /t:CreatePortable /p:Configuration=Release /v:m /nologo
+
+      - name: Package installer
+        run: msbuild Installer\Build.xml /t:CreateSetup /p:Configuration=Release /v:m /nologo
+
+      - name: Upload package output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-output
+          path: |
+            Installer/Output/*
+            Installer/Output/switcheroo-setup.exe
+            TestResult.xml
+          if-no-files-found: ignore
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) { $tag = "${{ github.ref_name }}" }
+          gh release create $tag --repo "${{ github.repository }}" --title "$tag" --generate-notes `
+            "Installer/Output/switcheroo-portable.zip" `
+            "Installer/Output/switcheroo-setup.exe"
