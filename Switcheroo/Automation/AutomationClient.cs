@@ -32,7 +32,7 @@ namespace Switcheroo.Automation
     /// </summary>
     internal class Program
     {
-        private const string PipeName = "switcheroo_plus_automation";
+        private static string PipeName { get { return "switcheroo_plus_automation_" + (Environment.GetEnvironmentVariable("SWITCHEROO_TEST_MODE") == "1" ? Environment.GetEnvironmentVariable("SWITCHEROO_TEST_ID") : System.Diagnostics.Process.GetCurrentProcess().SessionId.ToString()); } }
 
         [STAThread]
         private static int Main(string[] args)

@@ -141,6 +141,20 @@ namespace Switcheroo
     /// </summary>
     public static class ConfigManager
     {
+        internal static SwitcherooConfig FromLegacyValues(System.Collections.Generic.IDictionary<string, object> values)
+        {
+            var config = new SwitcherooConfig();
+            var fields = new[] { "Alt", "Ctrl", "Shift", "WindowsKey", "HotKey", "AltTabHook", "AutoSwitch", "RunAsAdmin", "EnableHotKey" };
+            foreach (string name in fields)
+            {
+                object value;
+                if (!values.TryGetValue(name, out value)) continue;
+                string target = name == "Alt" || name == "Ctrl" || name == "Shift" || name == "WindowsKey" || name == "HotKey" ? "Activate" + name : name;
+                typeof(SwitcherooConfig).GetProperty(target).SetValue(config, value, null);
+            }
+            return config;
+        }
+
         public static SwitcherooConfig Load()
         {
             SwitcherooConfig.MigrateLegacyConfig();

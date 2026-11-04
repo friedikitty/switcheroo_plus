@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
@@ -21,8 +21,6 @@
 using System;
 using System.Configuration;
 using System.Diagnostics;
-using System.Reflection;
-using System.Security.Principal;
 using System.Threading;
 using Switcheroo.Properties;
 
@@ -44,6 +42,9 @@ namespace Switcheroo
             }
             if (Switcheroo.Shell.ShellProtocol.TestMode && Environment.GetEnvironmentVariable("SWITCHEROO_TEST_STARTUP_CRASH") == "1")
                 Environment.FailFast("Injected startup crash");
+
+            if (Switcheroo.Shell.ShellProtocol.TestMode && Environment.GetEnvironmentVariable("SWITCHEROO_TEST_STARTUP_HANG") == "1")
+                Thread.Sleep(Timeout.Infinite);
 
             using (var mutex = new Mutex(false, mutex_id + Switcheroo.Shell.ShellProtocol.Suffix))
             {
@@ -110,28 +111,15 @@ namespace Switcheroo
         {
             SwitcherooConfig.MigrateLegacyConfig();
             if (System.IO.File.Exists(SwitcherooConfig.ConfigPath) || !Settings.Default.FirstRun) return;
-            // Upgrade only real legacy overrides; built-in XML defaults are not user choices.
-            bool hasLegacyValues = false;
-            foreach (SettingsPropertyValue value in Settings.Default.PropertyValues)
-                if (!value.UsingDefaultValue) hasLegacyValues = true;
-            if (!hasLegacyValues) return;
-
             Settings.Default.Upgrade();
+            var values = new System.Collections.Generic.Dictionary<string, object>();
+            foreach (SettingsPropertyValue value in Settings.Default.PropertyValues)
+                if (value.Name != "FirstRun" && !value.UsingDefaultValue) values[value.Name] = value.PropertyValue;
+            if (values.Count == 0) return;
+            var cfg = ConfigManager.FromLegacyValues(values);
+            ConfigManager.Save(cfg);
             Settings.Default.FirstRun = false;
             Settings.Default.Save();
-
-            // Also migrate legacy settings into the new JSONC config
-            var cfg = ConfigManager.Load();
-            cfg.ActivateAlt = Settings.Default.Alt;
-            cfg.ActivateCtrl = Settings.Default.Ctrl;
-            cfg.ActivateShift = Settings.Default.Shift;
-            cfg.ActivateWindowsKey = Settings.Default.WindowsKey;
-            cfg.ActivateHotKey = Settings.Default.HotKey;
-            cfg.AltTabHook = Settings.Default.AltTabHook;
-            cfg.AutoSwitch = Settings.Default.AutoSwitch;
-            cfg.RunAsAdmin = Settings.Default.RunAsAdmin;
-            cfg.EnableHotKey = Settings.Default.EnableHotKey;
-            ConfigManager.Save(cfg);
         }
 
     }

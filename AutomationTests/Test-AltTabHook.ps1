@@ -4,8 +4,9 @@
 # Requires an UNLOCKED desktop (keybd_event injection reaches the session).
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $repoRoot "Switcheroo\bin\Debug\switcheroo_plus.exe"
-$pipeName = "switcheroo_plus_automation"
+. (Join-Path $PSScriptRoot "Initialize-IsolatedTest.ps1")
+$exe = Join-Path $repoRoot "Switcheroo\bin\Debug\switcheroo_plus_watchdog.exe"
+$pipeName = "switcheroo_plus_automation_$testId"
 
 $api = @"
 [DllImport("user32.dll")]
@@ -28,7 +29,9 @@ function Send-Command($json) {
         $writer = New-Object System.IO.StreamWriter($client, $utf8, 4096, $true)
         $reader = New-Object System.IO.StreamReader($client, $utf8, $true, 4096, $true)
         $writer.WriteLine($json); $writer.Flush()
-        return $reader.ReadLine()
+        $read = $reader.ReadLineAsync()
+        if (-not $read.Wait(5000)) { throw "Pipe response timeout" }
+        return $read.Result
     }
     finally { $client.Dispose() }
 }
@@ -57,7 +60,7 @@ function Check($name, $cond, $detail) {
     return $cond
 }
 
-$configDir = Join-Path $env:USERPROFILE ".config\.switcheroo_plus"
+$configDir = $isolatedConfigRoot
 if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
 $configPath = Join-Path $configDir "config.jsonc"
 $configBackup = $null
@@ -69,9 +72,8 @@ try {
     Set-Content -Path $configPath -Encoding UTF8 -Value @'
 {"ActivateAlt":true,"ActivateCtrl":false,"ActivateShift":false,"ActivateWindowsKey":false,"ActivateHotKey":32,"PreviousAppEnabled":false,"PreviousAppAlt":true,"PreviousAppCtrl":false,"PreviousAppShift":false,"PreviousAppWindowsKey":false,"PreviousAppCapsLock":false,"PreviousAppHotKey":9,"AltTabHook":true,"AutoSwitch":false,"RunAsAdmin":false,"EnableHotKey":true,"RunOnStartup":false,"OpenUsageHintsByDefault":false,"WindowWidth":0,"WindowHeight":0,"MultiColumnEnabled":false,"RecentWindowsOnTopEnabled":true,"RecentWindowsOnTopCount":5,"AzShortcutsEnabled":true,"TaskbarBadgesEnabled":false}
 '@
-    Get-Process -Name "switcheroo_plus" -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 1
-    $proc = Start-Process -FilePath $exe -ArgumentList "--auto" -PassThru
+    $proc = Start-Process -FilePath $exe -ArgumentList "--auto" -PassThru -WindowStyle Hidden
     $ready = $false
     $deadline = (Get-Date).AddSeconds(15)
     while ((Get-Date) -lt $deadline -and -not $ready) {
@@ -116,7 +118,6 @@ finally {
     try { Send-Command '{"action":"exit"}' | Out-Null } catch {}
     Start-Sleep -Seconds 1
     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-    Get-Process -Name "switcheroo_plus" -ErrorAction SilentlyContinue | Stop-Process -Force
     if ($configBackup -ne $null) { [IO.File]::WriteAllText($configPath, $configBackup) }
     Write-Host "Cleaned up (config restored)."
 }

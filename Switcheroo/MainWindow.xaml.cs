@@ -646,7 +646,7 @@ namespace Switcheroo
                         "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information);
                     if (result == MessageBoxResult.Yes)
                     {
-                        Process.Start("https://github.com/kvakulo/Switcheroo/releases/latest");
+                        Switcheroo.Shell.ShellProtocol.Request(Switcheroo.Shell.ShellProtocol.WatchdogPipe, "openrelease");
                     }
                 }
                 else
@@ -1231,7 +1231,8 @@ namespace Switcheroo
             menu.Items.Add(new System.Windows.Controls.Separator());
 
             var exitItem = new System.Windows.Controls.MenuItem { Header = "Exit" };
-            exitItem.Click += (s, ev) => Quit();
+            exitItem.Click += (s, ev) => System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            { try { Switcheroo.Shell.ShellProtocol.Request(Switcheroo.Shell.ShellProtocol.WatchdogPipe, "exit"); } catch { } });
             menu.Items.Add(exitItem);
 
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;

@@ -44,7 +44,7 @@ namespace Switcheroo
                     if (value)
                     {
                         CreateShortcut(appLink);
-                        MessageBox.Show(
+                        if (!Switcheroo.Shell.ShellProtocol.TestMode) MessageBox.Show(
                             "Switcheroo will start with Windows. A shortcut was placed in shell:startup.",
                             "Run on Startup Enabled",
                             MessageBoxButton.OK,
@@ -53,7 +53,7 @@ namespace Switcheroo
                     else if (IsEnabled)
                     {
                         DeleteShortcut(appLink);
-                        MessageBox.Show(
+                        if (!Switcheroo.Shell.ShellProtocol.TestMode) MessageBox.Show(
                             "Switcheroo will no longer start with Windows. The shortcut in shell:startup was removed.",
                             "Run on Startup Disabled",
                             MessageBoxButton.OK,
@@ -101,6 +101,8 @@ namespace Switcheroo
 
         private static string GetAppLinkPath()
         {
+            if (Switcheroo.Shell.ShellProtocol.TestMode)
+                return Path.Combine(Switcheroo.Shell.ShellProtocol.ConfigRoot, "Switcheroo.lnk");
             var appDataStart =
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     @"Microsoft\Windows\Start Menu\Programs\Startup");

@@ -176,6 +176,8 @@ namespace Switcheroo.Automation
                     _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.OpenAboutForShell)); response["ok"] = true; break;
                 case "startup":
                     _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.ToggleStartupForShell)); response["ok"] = true; break;
+                case "checkui":
+                    response["checks"] = UiChecks.Run(request.ContainsKey("kind") && request["kind"] != "" ? int.Parse(request["kind"]) : -1); break;
                 case "fault":
                     if (!Switcheroo.Shell.ShellProtocol.TestMode) { response["error"] = "Test mode required"; break; }
                     string kind = request.ContainsKey("kind") ? request["kind"] : "managed";

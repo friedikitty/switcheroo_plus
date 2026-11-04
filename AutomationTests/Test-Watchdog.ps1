@@ -1,5 +1,5 @@
 #requires -Version 5.1
-param([string]$Configuration='Debug', [string]$Artifacts)
+param([string]$Configuration='Debug', [string]$Artifacts, [switch]$SkipDesktop)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 if(-not $Artifacts) { $Artifacts=Join-Path $repo '.temp\watchdog-tests' }
@@ -19,7 +19,7 @@ function Request([string]$Name,[string]$Action,[string]$Kind='') {
         $writer.AutoFlush=$true
         $writer.WriteLine((@{action=$Action;kind=$Kind}|ConvertTo-Json -Compress))
         $read=$reader.ReadLineAsync()
-        if(-not $read.Wait(2000)) { throw 'IPC response timeout' }
+        if(-not $read.Wait($(if($Action -eq 'checkui') { 20000 } else { 2000 }))) { throw 'IPC response timeout' }
         return ($read.Result|ConvertFrom-Json)
     } finally { $client.Dispose() }
 }
@@ -41,16 +41,27 @@ try {
     Assert (-not $watchdog.HasExited) 'watchdog remains alive'
     $firstPid=$s.pid
     Assert (-not (Request ($pipe+'_ui') 'status').visible) 'control window hidden by default'
-    Request ($pipe+'_ui') 'show'|Out-Null
+    Request ($pipe+'_ui') 'trayopen'|Out-Null
     Start-Sleep -Milliseconds 400
     Assert ((Request ($pipe+'_ui') 'status').visible) 'control window opens'
-    Request ($pipe+'_ui') 'hide'|Out-Null
+    Assert (-not (Request ($pipe+'_ui') 'status').startEnabled) 'Start button disabled for healthy core'
+    Request ($pipe+'_ui') 'close'|Out-Null
+    Start-Sleep -Milliseconds 200
+    Assert (-not (Request ($pipe+'_ui') 'status').visible -and -not $watchdog.HasExited) 'closing control window hides it'
     Request $pipe 'start'|Out-Null
     Start-Sleep -Milliseconds 400
     Assert ((State).pid -eq $firstPid) 'Start is idempotent'
     Request $corePipe 'fault' 'handled'|Out-Null
     Start-Sleep -Milliseconds 500
     Assert ((State).state -eq 'Running') 'handled exceptions are not crashes'
+    if($SkipDesktop) { Write-Host 'SKIPPED screenshot/input desktop scenarios: no interactive desktop' } else {
+        $uiChecks=Request $corePipe 'checkui'
+        Assert (-not $uiChecks.error -and $uiChecks.checks.ok) ('UI checks: '+($uiChecks|ConvertTo-Json -Depth 5 -Compress))
+        for($monitor=0;$monitor -lt $uiChecks.checks.monitors;$monitor++) {
+            $dotChecks=Request $corePipe 'checkui' ([string]$monitor)
+            Assert (-not $dotChecks.error -and $dotChecks.checks.ok) ('Monitor '+$monitor+' feedback: '+($dotChecks|ConvertTo-Json -Depth 5 -Compress))
+        }
+    }
     foreach($kind in @('managed','background','native','failfast')) {
         try { Request $corePipe 'fault' $kind|Out-Null } catch { }
         $s=Wait-State 'Crashed' 50
@@ -85,6 +96,17 @@ try {
         $s=Wait-State 'Running'
         Assert ($s.pid -ne $report.pid) "$kind explicit replacement"
     }
+    foreach($failure in @('test-dump-failure','test-dump-timeout')) {
+        Request $pipe $failure|Out-Null
+        try { Request $corePipe 'fault' 'managed'|Out-Null } catch { }
+        $s=Wait-State 'Crashed' 45
+        $report=Get-Content -LiteralPath (Join-Path $s.incident 'report.json') -Raw|ConvertFrom-Json
+        Assert ($report.dumpStatus -ne 'complete') "$failure is reported without a finalized dump"
+        if($failure -eq 'test-dump-timeout') { Assert ($report.dumpStatus -eq 'timeout') 'dump deadline enforced' }
+        Assert (-not (Test-Path (Join-Path $s.incident 'core.dmp'))) 'partial dump not published as complete'
+        Request $pipe 'start'|Out-Null
+        $s=Wait-State 'Running'
+    }
     Request $corePipe 'fault' 'recoverablehang'|Out-Null
     $s=Wait-State 'Unresponsive' 45
     $report=Get-Content -LiteralPath (Join-Path $s.incident 'report.json') -Raw|ConvertFrom-Json
@@ -96,15 +118,31 @@ try {
     Request $pipe 'restart'|Out-Null
     $s=Wait-State 'Running' 45
     Assert ($s.pid -ne $report.pid) 'permanent hang restart'
+    $bundles=@(Get-ChildItem -LiteralPath (Join-Path $root 'crashes') -Directory)
+    Assert ($bundles.Count -eq 5) 'incident retention keeps the last five bundles'
+    Assert ((State).logs.Count -gt 10) 'operation logs available through IPC'
     Request $pipe 'stop'|Out-Null
     $s=Wait-State 'Stopped'
     Assert (-not $watchdog.HasExited) 'Stop leaves shell available'
+    Start-Sleep -Milliseconds 200
+    Assert ((Request ($pipe+'_ui') 'status').startEnabled) 'Start button enabled when stopped'
     Request $pipe 'start'|Out-Null
     $s=Wait-State 'Running'
     Request $pipe 'restart'|Out-Null
     Start-Sleep -Milliseconds 500
     $s2=Wait-State 'Running'
     Assert ($s2.pid -ne $s.pid) 'Restart replaces healthy core'
+    for($rotation=0;$rotation -lt 4;$rotation++) {
+        $stream=[IO.File]::Open((Join-Path $root 'watchdog.log'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+        try { $stream.SetLength(5*1024*1024) } finally { $stream.Dispose() }
+        Request $pipe 'start'|Out-Null
+        $deadline=[DateTime]::UtcNow.AddSeconds(4)
+        while((Get-Item -LiteralPath (Join-Path $root 'watchdog.log')).Length -ge 5*1024*1024 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
+    }
+    Assert (@(Get-ChildItem -LiteralPath $root -Filter 'watchdog.log.*').Count -eq 3) 'log rotation retains three backups'
+    $ownedCore=Get-Process -Id (State).pid
+    $watchdog.Kill(); $watchdog.WaitForExit(3000)|Out-Null
+    try { Assert ($ownedCore.WaitForExit(10000)) 'watchdog termination cleans up owned core' } finally { $ownedCore.Dispose() }
     Write-Host "Artifacts: $root"
 } finally {
     if($watchdog -and -not $watchdog.HasExited) {

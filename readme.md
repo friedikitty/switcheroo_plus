@@ -40,6 +40,49 @@ Resize popup                  | drag edges              | Size is remembered acr
 Multi-column layout            | checkbox                | Side-by-side columns when many windows are open
 
 
+Watchdog and diagnostics
+------------------------
+
+Launch `switcheroo_plus_watchdog.exe`. It starts the switcher core with no control
+window and owns the tray icon. Right-click the icon and choose **Show control
+window** for Start, Stop, Restart and scrolling logs. Closing that window hides
+it; Exit stops both processes. Starting `switcheroo_plus.exe` directly also routes
+through the watchdog. Startup shortcuts and installer shortcuts target the watchdog.
+
+An unexpected crash captures a full-memory dump in a separate worker, writes an
+incident report and notifies you. Recovery is manual: choose Start or Restart.
+The watchdog also checks UI responsiveness and attempts one hang dump per episode.
+A recovered UI keeps its PID; a persistent hang can be restarted from the control
+window. No automatic restart loop runs.
+
+Diagnostics are under `%USERPROFILE%\.config\.switcheroo_plus\crashes`: each bundle
+contains `core.dmp`, `report.json` and recent logs. Only the latest five bundles
+are retained. `watchdog.log` rotates at 5 MB with three backups. Dump capture has a
+30-second deadline, and a partial file is never published as a completed dump.
+Dumps contain process memory and can contain window titles and other private data;
+review them before sharing. Keep the matching release symbols for analysis.
+
+The design follows Microsoft's [out-of-process MiniDumpWriteDump guidance](https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/nf-minidumpapiset-minidumpwritedump)
+and [debugger event lifecycle](https://learn.microsoft.com/en-us/windows/win32/debug/debugging-events).
+Managed and native unhandled exceptions preserve the fault thread and exception
+context. CLR FailFast can provide only an exit event; its dump retains remaining
+memory but may lack the original fault context. Killing the watchdog also ends
+its owned core/helper job. Ordinary external applications are not owned by that job.
+
+Switch feedback now combines the border pulse with a small, click-through blue
+dot at the activated window's center. Its soft edge and opacity fade over 600 ms.
+Options uses two columns with Shortcuts, Behavior, Appearance and Run groups.
+New and missing settings use the saved preference baseline; existing explicit
+settings are preserved.
+
+Automated verification
+----------------------
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File AutomationTests\Run-All.ps1`.
+See [the acceptance-test guide](AutomationTests/README.md) for coverage, isolation
+and artifact details.
+
+
 History
 ---------
 

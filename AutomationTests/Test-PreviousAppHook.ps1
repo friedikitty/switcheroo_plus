@@ -22,8 +22,9 @@
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $repoRoot "Switcheroo\bin\Debug\switcheroo_plus.exe"
-$pipeName = "switcheroo_plus_automation"
+. (Join-Path $PSScriptRoot "Initialize-IsolatedTest.ps1")
+$exe = Join-Path $repoRoot "Switcheroo\bin\Debug\switcheroo_plus_watchdog.exe"
+$pipeName = "switcheroo_plus_automation_$testId"
 $timeoutMs = 5000
 
 # --- keybd_event P/Invoke (synthesized input DOES pass through WH_KEYBOARD_LL) ---
@@ -58,7 +59,9 @@ function Send-Command($json) {
         $reader = New-Object System.IO.StreamReader($client, $utf8, $true, 4096, $true)
         $writer.WriteLine($json)
         $writer.Flush()
-        return $reader.ReadLine()
+        $read = $reader.ReadLineAsync()
+        if (-not $read.Wait(5000)) { throw "Pipe response timeout" }
+        return $read.Result
     }
     finally { $client.Dispose() }
 }
@@ -68,11 +71,10 @@ function Get-ForegroundHwnd {
 }
 
 # --- 1. Clean up any running instance ---
-Get-Process -Name "switcheroo_plus" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 
 # --- 2. Write config: previous-app = Ctrl+Shift+E (VK_E = 0x45 = 69) ---
-$configDir = Join-Path $env:USERPROFILE ".config\.switcheroo_plus"
+$configDir = $isolatedConfigRoot
 if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
 $configPath = Join-Path $configDir "config.jsonc"
 $config = @"
@@ -90,7 +92,7 @@ $config = @"
 Set-Content -Path $configPath -Value $config -Encoding UTF8
 
 # --- 3. Start app under --auto ---
-$proc = Start-Process -FilePath $exe -ArgumentList "--auto" -PassThru
+$proc = Start-Process -FilePath $exe -ArgumentList "--auto" -PassThru -WindowStyle Hidden
 Write-Host "Started switcheroo_plus (PID $($proc.Id))"
 Start-Sleep -Seconds 3
 

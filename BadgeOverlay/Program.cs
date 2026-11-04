@@ -124,7 +124,7 @@ namespace SwitcherooBadgeOverlay
         {
             return new NamedPipeServerStream(
                 PipeName, PipeDirection.InOut, 1,
-                PipeTransmissionMode.Byte, PipeOptions.None);
+                PipeTransmissionMode.Byte, PipeOptions.None, 4096, 4096, Switcheroo.Shell.ShellProtocol.Security());
         }
 
         private static void PipeLoop()

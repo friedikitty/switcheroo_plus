@@ -33,12 +33,13 @@ namespace Switcheroo.Watchdog
                     return 0;
                 }
                 bool created;
+                using(var installMarker=new Mutex(false,"DBDE24E4-91F6-11DF-B495-C536DFD72085-switcheroo"))
                 using(var mutex=new Mutex(true,"switcheroo_plus_watchdog"+ShellProtocol.Suffix,out created))
                 {
                     if(!created) return 0;
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
-                    using(var shell=new ShellContext(auto)) Application.Run(shell);
+                    using(var shell=new ShellContext(auto, ShellProtocol.TestMode ? Value(args,"--test-core") : null)) Application.Run(shell);
                 }
                 return 0;
             }
@@ -59,7 +60,14 @@ namespace Switcheroo.Watchdog
         readonly NotifyIcon tray;
         readonly Supervisor supervisor;
         bool exit;
-        public ShellContext(bool auto)
+        System.Threading.Timer testDeadline;
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct ScrollInfo { public int cbSize; public uint mask; public int min,max; public uint page; public int position,track; }
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern bool GetScrollInfo(IntPtr hwnd, int bar, ref ScrollInfo info);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wparam, ref Point point);
+        public ShellContext(bool auto,string testCore)
         {
             form=new Form { Text="Switcheroo control",Width=760,Height=500,MinimumSize=new Size(540,300),StartPosition=FormStartPosition.CenterScreen };
             // Create a message target without showing a control window.
@@ -74,7 +82,7 @@ namespace Switcheroo.Watchdog
             top.Controls.AddRange(new Control[]{start,stop,restart,diagnostics});
             logs=new RichTextBox { ReadOnly=true,Dock=DockStyle.Fill,WordWrap=false,BackColor=SystemColors.Window,Font=new Font("Consolas",10),Name="Logs" };
             form.Controls.Add(logs); form.Controls.Add(top);
-            supervisor=new Supervisor(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"switcheroo_plus.exe"),auto);
+            supervisor=new Supervisor(testCore ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"switcheroo_plus.exe"),auto);
             start.Click+=(s,e)=>supervisor.Dispatch("start"); stop.Click+=(s,e)=>supervisor.Dispatch("stop"); restart.Click+=(s,e)=>supervisor.Dispatch("restart");
             diagnostics.Click+=(s,e)=> { try { string path=Path.Combine(SwitcherooConfig.ConfigDirectory,"crashes"); Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo("explorer.exe",Native.Quote(path)) { UseShellExecute=true }); } catch(Exception ex) { supervisor.Log(ex.Message); } };
             var menu=new ContextMenuStrip();
@@ -94,11 +102,22 @@ namespace Switcheroo.Watchdog
             form.FormClosing+=(s,e)=> { if(!exit) { e.Cancel=true; form.Hide(); } };
             ShellProtocol.Serve(ShellProtocol.WatchdogPipe+"_ui",action=>
             {
-                if(action=="show" || action=="hide") { Post(()=> { if(action=="show") Show(); else form.Hide(); }); return new { ok=true }; }
+                if(action=="show" || action=="hide" || action=="close" || action=="trayopen")
+                {
+                    Post(()=> { if(action=="trayopen") ((ToolStripMenuItem)tray.ContextMenuStrip.Items[0]).PerformClick(); else if(action=="show") Show(); else if(action=="close") form.Close(); else form.Hide(); });
+                    return new { ok=true };
+                }
                 if(action=="status") return new { visible=form.Visible,startEnabled=start.Enabled,stopEnabled=stop.Enabled,restartEnabled=restart.Enabled };
                 throw new ArgumentException("Unknown UI action");
             });
             supervisor.Dispatch("start");
+            if(ShellProtocol.TestMode)
+                testDeadline=new System.Threading.Timer(_ =>
+                {
+                    supervisor.Dispatch("exit");
+                    Thread.Sleep(45000);
+                    Process.GetCurrentProcess().Kill();
+                }, null, 300000, Timeout.Infinite);
         }
         void Post(Action action) { if(!form.IsDisposed) try { form.BeginInvoke(action); } catch(InvalidOperationException) { } }
         void Show() { form.Show(); form.Activate(); Refresh(); }
@@ -110,12 +129,17 @@ namespace Switcheroo.Watchdog
             bool idle=state=="Stopped" || state=="Crashed";
             start.Enabled=idle; stop.Enabled=restart.Enabled=state=="Running" || state=="Unresponsive" || state=="Starting";
             int selected=logs.SelectionStart, length=logs.SelectionLength;
-            bool atEnd=selected+length>=logs.TextLength;
+            var info = new ScrollInfo { cbSize=System.Runtime.InteropServices.Marshal.SizeOf(typeof(ScrollInfo)), mask=0x17 };
+            GetScrollInfo(logs.Handle, 1, ref info);
+            bool atEnd=info.position + info.page >= info.max;
+            var scroll = new Point();
+            SendMessage(logs.Handle, 0x4dd, IntPtr.Zero, ref scroll);
             var lines=(System.Collections.ArrayList)snapshot["logs"];
             logs.Text=string.Join(Environment.NewLine,lines.Cast<string>());
             logs.Select(atEnd?logs.TextLength:Math.Min(selected,logs.TextLength),atEnd?0:Math.Min(length,Math.Max(0,logs.TextLength-selected)));
             if(atEnd) logs.ScrollToCaret();
+            else SendMessage(logs.Handle, 0x4de, IntPtr.Zero, ref scroll);
         }
-        protected override void Dispose(bool disposing) { if(disposing) { tray.Dispose(); form.Dispose(); } base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if(disposing) { if(testDeadline!=null) testDeadline.Dispose(); tray.Dispose(); form.Dispose(); } base.Dispose(disposing); }
     }
 }

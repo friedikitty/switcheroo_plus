@@ -32,10 +32,21 @@ jobs:
         shell: cmd
         run: packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\Debug\Switcheroo.Core.UnitTests.dll --result=TestResult.xml
 
+      - name: Watchdog acceptance tests
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File AutomationTests/Run-All.ps1 -SkipBuild -SkipDesktop
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: TestResult.xml
+          path: |
+            TestResult.xml
+            .temp/acceptance/**/results.json
+            .temp/acceptance/**/unit-tests.xml
+            .temp/acceptance/**/watchdog.log
+            .temp/acceptance/**/report.json
+            .temp/acceptance/**/debugger.txt
+            .temp/acceptance/**/*.png
           if-no-files-found: ignore

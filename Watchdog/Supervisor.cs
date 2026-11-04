@@ -15,6 +15,7 @@ namespace Switcheroo.Watchdog
     internal sealed class Supervisor
     {
         readonly object sync = new object();
+        readonly object captureLock = new object();
         readonly ConcurrentQueue<string> commands = new ConcurrentQueue<string>();
         readonly Queue<string> logs = new Queue<string>();
         readonly string root, corePath;
@@ -22,10 +23,11 @@ namespace Switcheroo.Watchdog
         Thread debugThread;
         Process core;
         IntPtr job;
-        volatile bool intentional, exiting, capturing;
+        volatile bool intentional, exiting, capturing, crashPending;
         string state = "Stopped", lastIncident = "", lastError = "";
         DateTime started, nextProbe, lastHealthy;
         bool hangCaptured;
+        string testCaptureMode;
         public event Action Changed;
         public event Action<string> Incident;
         public event Action ExitReady;
@@ -40,6 +42,10 @@ namespace Switcheroo.Watchdog
         public object Dispatch(string action)
         {
             if (action == "status" || action == "ping") return Status();
+            if(ShellProtocol.TestMode && (action=="test-dump-timeout" || action=="test-dump-failure"))
+            {
+                testCaptureMode=action; return new { ok=true };
+            }
             if (action == "coreexiting") { intentional=true; return new { ok=true }; }
             if (action == "start" || action == "stop" || action == "restart" || action == "exit")
             {
@@ -50,6 +56,7 @@ namespace Switcheroo.Watchdog
                 }
                 return new { ok=true };
             }
+            if(action=="openrelease") { commands.Enqueue(action); return new { ok=true }; }
             if (action == "options" || action == "about" || action == "startup" || action == "showcore")
             {
                 commands.Enqueue(action);
@@ -102,6 +109,7 @@ namespace Switcheroo.Watchdog
                         if(command=="stop" || command=="restart" || command=="exit") Stop();
                         if(command=="start" || command=="restart") Start();
                         if(command=="exit") { exiting=true; var done=ExitReady; if(done!=null) done(); }
+                        if(command=="openrelease") Process.Start(new ProcessStartInfo("https://github.com/kvakulo/Switcheroo/releases/latest") { UseShellExecute=true });
                         if(command=="options" || command=="about" || command=="startup" || command=="showcore")
                             ShellProtocol.Request(ShellProtocol.CorePipe,command=="showcore" ? "show" : command);
                     }
@@ -116,7 +124,7 @@ namespace Switcheroo.Watchdog
         {
             if(debugThread!=null && debugThread.IsAlive) { Log("Start ignored: core already exists"); return; }
             if(!File.Exists(corePath)) { SetState("Stopped"); throw new FileNotFoundException("Core executable not found",corePath); }
-            intentional=false; hangCaptured=false; lastHealthy=DateTime.UtcNow; started=lastHealthy; nextProbe=started;
+            intentional=false; crashPending=false; hangCaptured=false; lastHealthy=DateTime.UtcNow; started=lastHealthy; nextProbe=started;
             lock(sync) lastError="";
             SetState("Starting");
             debugThread=new Thread(DebugLoop) { IsBackground=true, Name="CoreDebugger" };
@@ -140,7 +148,7 @@ namespace Switcheroo.Watchdog
         }
         void Probe()
         {
-            if(core==null || capturing || State=="Stopping" || State=="Stopped" || State=="Crashed" || DateTime.UtcNow<nextProbe) return;
+            if(core==null || capturing || crashPending || State=="Stopping" || State=="Stopped" || State=="Crashed" || DateTime.UtcNow<nextProbe) return;
             nextProbe=DateTime.UtcNow.AddSeconds(2);
             bool healthy=false;
             try
@@ -150,6 +158,7 @@ namespace Switcheroo.Watchdog
             }
             catch(IOException) { }
             catch(TimeoutException) { }
+            if(crashPending) return;
             if(healthy)
             {
                 lastHealthy=DateTime.UtcNow;
@@ -212,7 +221,7 @@ namespace Switcheroo.Watchdog
                                 continuation=0x80010001; // Let the application/OS handle the exception.
                                 if(!first && !crashed)
                                 {
-                                    crashed=true;
+                                    crashed=true; crashPending=true;
                                     var record=new byte[IntPtr.Size==8?152:80];
                                     Marshal.Copy(IntPtr.Add(ev,union),record,0,record.Length);
                                     try { Capture("crash",tid,exception,record,Native.Context(tid)); }
@@ -232,7 +241,7 @@ namespace Switcheroo.Watchdog
                             {
                                 // CLR FailFast can terminate without a second-chance exception.
                                 // Capture remaining memory before acknowledging the exit event.
-                                crashed=true;
+                                crashed=true; crashPending=true;
                                 Capture("termination",0,exitCode,null,null);
                             }
                             finished=true;
@@ -282,6 +291,14 @@ namespace Switcheroo.Watchdog
         }
         void Capture(string kind, uint thread, uint exception, byte[] record, byte[] context)
         {
+            lock(captureLock)
+            {
+                if(kind=="hang" && crashPending) return;
+                CaptureLocked(kind,thread,exception,record,context);
+            }
+        }
+        void CaptureLocked(string kind, uint thread, uint exception, byte[] record, byte[] context)
+        {
             lock(sync) { if(capturing) return; capturing=true; }
             string previous=State;
             string dir=null;
@@ -292,6 +309,9 @@ namespace Switcheroo.Watchdog
                 string temp=Path.Combine(dir,"core.dmp.partial"), final=Path.Combine(dir,"core.dmp");
                 var request=new Dictionary<string,object> { {"pid",core.Id},{"dump",temp},{"thread",thread} };
                 if(record!=null) { request["record"]=Convert.ToBase64String(record); request["context"]=Convert.ToBase64String(context); }
+                string mode=testCaptureMode; testCaptureMode=null;
+                if(ShellProtocol.TestMode && mode=="test-dump-timeout") request["delayMs"]=3000;
+                if(ShellProtocol.TestMode && mode=="test-dump-failure") Directory.CreateDirectory(temp);
                 string requestPath=Path.Combine(dir,"capture.json");
                 File.WriteAllText(requestPath,ShellProtocol.Encode(request));
                 string result="failed";
@@ -300,7 +320,7 @@ namespace Switcheroo.Watchdog
                     var psi=new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName,"--write-dump "+Native.Quote(requestPath)) { UseShellExecute=false,CreateNoWindow=true };
                     using(var worker=Process.Start(psi))
                     {
-                        if(!worker.WaitForExit(30000)) { worker.Kill(); worker.WaitForExit(3000); result="timeout"; }
+                        if(!worker.WaitForExit(ShellProtocol.TestMode && mode=="test-dump-timeout" ? 1000 : 30000)) { worker.Kill(); worker.WaitForExit(3000); result="timeout"; }
                         else if(worker.ExitCode!=0) result="Windows error 0x"+worker.ExitCode.ToString("X8");
                         else { File.Move(temp,final); result="complete"; }
                     }
@@ -315,7 +335,7 @@ namespace Switcheroo.Watchdog
                 if(kind=="hang") Notify("Core is unresponsive. A diagnostic capture was attempted; recovery is manual.");
             }
             catch(Exception e) { lock(sync) lastError=e.Message; Log("Dump/report write failed: "+e.Message); }
-            finally { capturing=false; SetState(previous); }
+            finally { capturing=false; if(!crashPending) SetState(previous); }
         }
     }
 }

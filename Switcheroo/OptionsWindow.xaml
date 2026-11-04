@@ -21,22 +21,16 @@
                             <CheckBox Name="AltTabCheckBox" Checked="AltTabCheckBox_OnChecked" Unchecked="AltTabCheckBox_OnUnchecked" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Activate Switcheroo with Alt+Tab" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                Use Switcheroo instead of the integrated task switcher in Windows.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Replace the Windows Alt+Tab switcher.</TextBlock>
                             <CheckBox Name="PreviousAppCheckBox" Margin="0,5,0,4" Checked="PreviousAppCheckBox_Checked" Unchecked="PreviousAppCheckBox_OnUnchecked">
                                 <TextBlock TextWrapping="Wrap" Text="Switch back to previous app with this shortcut:" />
                             </CheckBox>
                             <TextBox Name="PreviousAppPreview" Margin="25,5,0,10" PreviewKeyDown="PreviousAppPreview_OnPreviewKeyDown" GotFocus="PreviousAppPreview_OnGotFocus" LostFocus="PreviousAppPreview_OnLostFocus" Width="150" HorizontalAlignment="Left" />
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                Toggle between the current and previous window without showing the overlay.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Toggle between the current and previous app without opening the list.</TextBlock>
                             <CheckBox Name="AzShortcutsCheckBox" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Show 0-9 / a-z / A-Z shortcuts in the overlay" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                Press the displayed <Span FontFamily="Consolas" FontWeight="Bold">0-9</Span>, <Span FontFamily="Consolas" FontWeight="Bold">a-z</Span> (no Shift) or <Span FontFamily="Consolas" FontWeight="Bold">A-Z</Span> (with Shift) key to jump straight to that window.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Press a displayed key to switch directly. Hold Shift for uppercase keys.</TextBlock>
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Header="Behavior" Padding="10" Margin="0,0,0,12">
@@ -44,22 +38,19 @@
                             <CheckBox Name="AutoSwitch" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Automatically switch window when releasing Alt + Tab" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                Faster and more native-like swiching between windows.<LineBreak />
-                                <LineBreak />
-                Use <Span FontFamily="Consolas" FontWeight="Bold">Ctrl + Alt + Tab</Span> for displaying Switcheroo with search activated, or
-                press <Span FontFamily="Consolas" FontWeight="Bold">Alt + S</Span> when the Switcheroo overlay appears.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Release Alt to switch. Use Ctrl+Alt+Tab to open with search.</TextBlock>
                             <CheckBox Name="RecentOnTopCheckBox" Margin="0,5,0,4" Checked="RecentOnTopCheckBox_OnChecked" Unchecked="RecentOnTopCheckBox_OnUnchecked">
                                 <TextBlock TextWrapping="Wrap" Text="Keep recently used windows on top" />
                             </CheckBox>
-                            <StackPanel Orientation="Horizontal" Margin="25,2,5,0">
-                                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Pinned recent windows:" />
-                                <TextBox Name="RecentOnTopCountBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" />
-                            </StackPanel>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                The previous app stays first so <Span FontFamily="Consolas" FontWeight="Bold">Enter</Span> still switches back to it; the rest of the pinned group is sorted alphabetically to keep the list order stable.
-            </TextBlock>
+                            <Grid Margin="20,2,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="46" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Pinned recent windows:" TextWrapping="Wrap" />
+                                <TextBox Name="RecentOnTopCountBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" Grid.Column="1" />
+                            </Grid>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">The previous app stays first; other pinned windows are alphabetical.</TextBlock>
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>
@@ -69,29 +60,27 @@
                             <CheckBox Name="MultiColumnCheckBox" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Use multi-column layout for many windows" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                When there are many open windows, show them in side-by-side columns instead of a single tall list. You can resize the window to control how many columns fit.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Arrange large window lists in columns. Resize the overlay to adjust the layout.</TextBlock>
                             <CheckBox Name="TaskbarBadgesCheckBox" Margin="0,5,0,4" Checked="TaskbarBadgesCheckBox_OnChecked" Unchecked="TaskbarBadgesCheckBox_OnUnchecked">
                                 <TextBlock TextWrapping="Wrap" Text="Show quick-switch keys on taskbar buttons" />
                             </CheckBox>
-                            <StackPanel Orientation="Horizontal" Margin="25,2,5,0">
-                                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Auto-hide badges after (seconds, 0 = never):" />
-                                <TextBox Name="BadgeTimeoutBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" />
-                            </StackPanel>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                While the overlay is open, draw each window's <Span FontFamily="Consolas" FontWeight="Bold">0-9 / a-z / A-Z</Span> key at the top-left corner of its taskbar button. Requires the overlay shortcuts to be enabled.
-            </TextBlock>
+                            <Grid Margin="20,2,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="46" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Auto-hide badges after (seconds, 0 = never):" TextWrapping="Wrap" />
+                                <TextBox Name="BadgeTimeoutBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" Grid.Column="1" />
+                            </Grid>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Show each window’s shortcut on its taskbar button. Requires quick-switch keys.</TextBlock>
                             <CheckBox Name="SwitchHighlightCheckBox" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Highlight the window you switch to" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Briefly show an accent border and a soft blue dot at the center of the activated window.</TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Show an accent border and a fading blue dot at the center of the activated window.</TextBlock>
                             <CheckBox Name="OpenUsageHintsByDefaultCheckBox" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Open the usage hints by default" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                Expand the <Span FontFamily="Consolas" FontWeight="Bold">?</Span> help strip every time Switcheroo opens. You can still toggle it manually.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Expand the help strip whenever the overlay opens.</TextBlock>
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Header="Run" Padding="10" Margin="0,0,0,12">
@@ -99,18 +88,11 @@
                             <CheckBox x:Name="RunAsAdministrator" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Run as Administrator *" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                This is needed if you want <Span FontFamily="Consolas" FontWeight="Bold">Alt + Tab</Span> to work when programs
-                running with higher privileges than your user account are in focus.<LineBreak />
-                                <LineBreak />
-                                <Italic>* Requires a restart of Switcheroo</Italic>
-                            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Allow shortcuts over elevated apps. Requires restarting Switcheroo.</TextBlock>
                             <CheckBox Name="RunOnStartup" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Run on Startup" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">
-                Add Switcheroo to the Windows startup folder.
-            </TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Start the watchdog and switcher when you sign in.</TextBlock>
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>

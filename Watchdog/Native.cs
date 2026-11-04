@@ -74,7 +74,13 @@ namespace Switcheroo.Watchdog
         // This worker never creates a tray icon, takes a mutex, or starts the core.
         internal static int WriteDump(string requestPath)
         {
+            using (var deadline = new Timer(_ => Process.GetCurrentProcess().Kill(), null, 35000, Timeout.Infinite))
+                return WriteDumpCore(requestPath);
+        }
+        private static int WriteDumpCore(string requestPath)
+        {
             var request = ShellProtocol.Decode(File.ReadAllText(requestPath));
+            if(ShellProtocol.TestMode && request.ContainsKey("delayMs")) Thread.Sleep(Convert.ToInt32(request["delayMs"]));
             uint pid = Convert.ToUInt32(request["pid"]);
             var process = OpenProcess(0x410, false, pid);
             if (process == IntPtr.Zero) return Marshal.GetLastWin32Error();

@@ -104,6 +104,7 @@
     <Compile Include="FormattedTextAttribute.cs" />
     <Compile Include="TaskbarBadgeOverlay.cs" />
     <Compile Include="SwitchHighlight.cs" />
+    <Compile Include="Automation\UiChecks.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

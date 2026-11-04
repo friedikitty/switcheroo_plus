@@ -14,8 +14,9 @@
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $repoRoot "Switcheroo\bin\Debug\switcheroo_plus.exe"
-$pipeName = "switcheroo_plus_automation"
+. (Join-Path $PSScriptRoot "Initialize-IsolatedTest.ps1")
+$exe = Join-Path $repoRoot "Switcheroo\bin\Debug\switcheroo_plus_watchdog.exe"
+$pipeName = "switcheroo_plus_automation_$testId"
 $timeoutMs = 5000
 $tempDir = Join-Path $repoRoot ".temp\automation-hotkeys"
 $fileA = Join-Path $tempDir "switcheroo-hotkey-a.txt"
@@ -35,7 +36,9 @@ function Send-Command($json) {
         $reader = New-Object System.IO.StreamReader($client, $utf8, $true, 4096, $true)
         $writer.WriteLine($json)
         $writer.Flush()
-        return $reader.ReadLine()
+        $read = $reader.ReadLineAsync()
+        if (-not $read.Wait(5000)) { throw "Pipe response timeout" }
+        return $read.Result
     }
     finally { $client.Dispose() }
 }
@@ -170,10 +173,9 @@ $paintWindow = $null
 $proc = $null
 $results = @()
 
-Get-Process -Name "switcheroo_plus" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 
-$configDir = Join-Path $env:USERPROFILE ".config\.switcheroo_plus"
+$configDir = $isolatedConfigRoot
 if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
 $configPath = Join-Path $configDir "config.jsonc"
 $config = @"
@@ -196,7 +198,7 @@ try {
     $paintWindow = Start-Process -FilePath "mspaint.exe" -PassThru
     Start-Sleep -Seconds 2
 
-    $proc = Start-Process -FilePath $exe -ArgumentList "--auto" -PassThru
+    $proc = Start-Process -FilePath $exe -ArgumentList "--auto" -PassThru -WindowStyle Hidden
     Start-Sleep -Seconds 3
     Wait-ForPipe
 

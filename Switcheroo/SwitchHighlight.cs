@@ -88,6 +88,7 @@ namespace Switcheroo
             if (WinApi.IsIconic(hwnd) || !WinApi.IsWindowVisible(hwnd))
                 return;
 
+            EnsureWindows();
             WinApi.RECT frame;
             if (!TryGetFrame(hwnd, out frame))
                 return;
@@ -119,12 +120,20 @@ namespace Switcheroo
             _pulse.Start();
         }
 
+        internal bool OwnsWindow(IntPtr handle) { return handle==dotHandle || Array.IndexOf(_handles,handle)>=0; }
+        internal string DotBounds()
+        {
+            WinApi.RECT r; WinApi.GetWindowRect(dotHandle,out r);
+            return r.Left+","+r.Top+","+r.Right+","+r.Bottom+" wpf="+dot.Left+","+dot.Top+","+dot.Width+","+dot.Height;
+        }
         private void ShowDot()
         {
             DotCenterX = Left + (Right - Left) / 2;
             DotCenterY = Top + (Bottom - Top) / 2;
             var source = PresentationSource.FromVisual(dot);
             double scale = source == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
+            try { uint dpi = GetDpiForWindow(Target); if (dpi != 0) scale = dpi / 96.0; }
+            catch (EntryPointNotFoundException) { }
             DotSize = (int)Math.Round(48 * scale);
             // Reassert topmost after fullscreen activation without taking focus.
             WinApi.SetWindowPos(dotHandle, new IntPtr(-1), DotCenterX - DotSize / 2, DotCenterY - DotSize / 2,
@@ -256,7 +265,7 @@ namespace Switcheroo
             return frame.Right > left && frame.Left < right && frame.Bottom > top && frame.Top < bottom;
         }
 
-        private static bool TryGetFrame(IntPtr hwnd, out WinApi.RECT frame)
+        private bool TryGetFrame(IntPtr hwnd, out WinApi.RECT frame)
         {
             // The visible frame, not the invisible resize border classic windows have
             if (WinApi.DwmGetWindowAttribute(hwnd, WinApi.DWMWA_EXTENDED_FRAME_BOUNDS,
@@ -289,6 +298,9 @@ namespace Switcheroo
             _visible = false;
             CurrentThickness = 0;
         }
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hwnd);
 
         [DllImport("user32.dll")]
         private static extern int GetWindowLong(IntPtr hWnd, int index);

@@ -31,6 +31,7 @@ namespace Switcheroo.Shell
         {
             var task = reader.ReadLineAsync();
             if (!task.Wait(timeout)) throw new TimeoutException("Pipe response timed out");
+            if (task.Result == null) throw new EndOfStreamException("Pipe disconnected");
             return task.Result;
         }
         public static string Request(string pipe, string action, int timeout = 1000)

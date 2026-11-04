@@ -56,6 +56,19 @@ namespace Switcheroo.Core.UnitTests
             Assert.That(c.WindowHeight, Is.EqualTo(698));
         }
 
+        [Test]
+        public void FromLegacyValues_OnlyActualOverrides_MergesWithNewDefaults()
+        {
+            var values = new System.Collections.Generic.Dictionary<string, object> { { "Alt", false }, { "HotKey", 65 } };
+            var method = typeof(ConfigManager).GetMethod("FromLegacyValues", BindingFlags.NonPublic | BindingFlags.Static);
+            var config = (SwitcherooConfig)method.Invoke(null, new object[] { values });
+            Assert.That(config.ActivateAlt, Is.False);
+            Assert.That(config.ActivateHotKey, Is.EqualTo(65));
+            Assert.That(config.AltTabHook, Is.True);
+            Assert.That(config.EnableHotKey, Is.False);
+            Assert.That(config.PreviousAppCtrl, Is.True);
+        }
+
         private static SwitcherooConfig FromJson(string json)
         {
             var method = typeof(ConfigManager).GetMethod("FromJson", BindingFlags.NonPublic | BindingFlags.Static);
