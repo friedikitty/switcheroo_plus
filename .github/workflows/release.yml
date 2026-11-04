@@ -44,6 +44,9 @@ jobs:
           Set-Content -Path $path -Value $text -NoNewline
           "Stamped $ver into $path"
 
+      - name: Install NUnit console runner
+        run: nuget install NUnit.ConsoleRunner -Version 3.17.0 -OutputDirectory packages -NonInteractive
+
       - name: Build (Release)
         run: msbuild Switcheroo.sln /p:Configuration=Release /p:UseSharedCompilation=false /v:m /nologo
 
