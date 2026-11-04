@@ -85,6 +85,7 @@ namespace Switcheroo
             TaskbarBadgesCheckBox.IsChecked = _config.TaskbarBadgesEnabled;
             BadgeTimeoutBox.Text = _config.TaskbarBadgeTimeoutSeconds.ToString();
             BadgeTimeoutBox.IsEnabled = _config.TaskbarBadgesEnabled;
+            SwitchHighlightCheckBox.IsChecked = _config.SwitchHighlightEnabled;
             OpenUsageHintsByDefaultCheckBox.IsChecked = _config.OpenUsageHintsByDefault;
             MultiColumnCheckBox.IsChecked = _config.MultiColumnEnabled;
             RecentOnTopCheckBox.IsChecked = _config.RecentWindowsOnTopEnabled;
@@ -166,6 +167,7 @@ namespace Switcheroo
             if (!int.TryParse(BadgeTimeoutBox.Text, out badgeTimeout))
                 badgeTimeout = 10;
             _config.TaskbarBadgeTimeoutSeconds = Math.Max(0, Math.Min(300, badgeTimeout));
+            _config.SwitchHighlightEnabled = SwitchHighlightCheckBox.IsChecked.GetValueOrDefault();
             _config.PreviousAppEnabled = previousAppEnabled;
             _config.PreviousAppAlt = _previousAppViewModel.Alt;
             _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;

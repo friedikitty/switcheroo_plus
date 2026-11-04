@@ -53,6 +53,10 @@
             <TextBlock Margin="25,2,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
                 While the overlay is open, draw each window's <Span FontFamily="Consolas" FontWeight="Bold">0-9 / a-z / A-Z</Span> key at the top-left corner of its taskbar button. Requires the overlay shortcuts to be enabled.
             </TextBlock>
+            <CheckBox Name="SwitchHighlightCheckBox" Margin="5,5,5,1">Flash the window you switch to</CheckBox>
+            <TextBlock Margin="25,0,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
+                Briefly draws a thin accent border around the window that becomes active, so it is obvious where the switch landed. Applies to every switch, including <Span FontFamily="Consolas" FontWeight="Bold">Alt+Tab</Span>.
+            </TextBlock>
             <CheckBox Name="OpenUsageHintsByDefaultCheckBox" Margin="5,5,5,1">Open the usage hints by default</CheckBox>
             <TextBlock Margin="25,0,5,10" FontSize="10" Foreground="DimGray" TextWrapping="Wrap">
                 Expand the <Span FontFamily="Consolas" FontWeight="Bold">?</Span> help strip every time Switcheroo opens. You can still toggle it manually.

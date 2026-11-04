@@ -194,6 +194,10 @@ namespace Switcheroo.Automation
                     response["badges"] = _mainWindow.GetBadgeList();
                     break;
 
+                case "getswitchhighlight":
+                    response["highlight"] = _mainWindow.GetSwitchHighlightState();
+                    break;
+
                 case "getwindows":
                     response["windows"] = _mainWindow.GetWindowList();
                     break;

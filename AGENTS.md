@@ -76,7 +76,7 @@ Distribution: GitHub Releases, Chocolatey (`choco install switcheroo`), portable
 
 ## Development Commands
 
-Build (requires .NET Framework 4.5 + MSBuild or Visual Studio 2013+):
+Build (requires the .NET Framework 4.8 targeting pack + MSBuild; CI uses `windows-2022`):
 
 ```powershell
 # Build Debug
@@ -92,11 +92,11 @@ msbuild Installer\Build.xml /t:CreatePortable
 msbuild Installer\Build.xml /t:CreateSetup
 ```
 
-Run tests (requires NUnit 2.6.3 runner or compatible adapter):
+Run tests (NUnit 3 is restored from `packages.config` with `nuget restore`):
 
 ```powershell
 # Using NUnit console runner
-packages\NUnit.2.6.3\tools\nunit-console.exe Core.UnitTests\bin\Debug\Switcheroo.Core.UnitTests.dll
+packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\Debug\Switcheroo.Core.UnitTests.dll
 ```
 
 Run application:
@@ -157,7 +157,14 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - Shortcut-key presses resolve by the displayed `ShortcutKey` label (`SwitchToWindowByShortcutKey`), not by list index, so keys stay correct after filtering.
 - Packaging: `Installer/Build.xml` builds `BadgeOverlay` before the app in both targets, so the setup and portable zip pick up `switcheroo_plus_badges.exe` from the app bin folder (`*.exe` wildcard). The helper's own post-build copy is skipped when `SolutionDir` is empty (direct csproj build).
 
+### Switch highlight (feedback after switching)
+- `SwitchHighlight` (`Switcheroo/SwitchHighlight.cs`) briefly frames the window that just became active: four thin opaque, click-through, topmost edge windows (`WS_EX_TRANSPARENT|TOOLWINDOW|NOACTIVATE`), shown at 3 px for 160 ms, then 2 px and 1 px for 80 ms each, then parked off-screen. Every switch path (overlay Enter, digit/letter shortcuts, Alt+Tab release, previous-app hotkey) ends in `ActivateAppWindow()`, so one call there covers all of them.
+- It deliberately reuses the badge technique: opaque non-layered windows parked at `-30000`, positioned in physical pixels with `SetWindowPos` (no DIP conversion), and **no `SWP_NOREDRAW`** - parked-then-moved windows stay unpainted with it. `FlashWindowEx` was rejected (it flashes caption/taskbar like an attention request), as was a single transparent overlay.
+- Rectangle comes from `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)` (fallback `GetWindowRect`); the target HWND is the foreground window right after the switch, falling back to the list entry when the foreground is zero or our own overlay. The four windows are created once and pre-warmed at `DispatcherPriority.Background` so the first switch does not pay window creation; `Quit()` disposes them.
+- Option: `SwitchHighlightEnabled` (default on) with the "Flash the window you switch to" checkbox. Test hook: automation action `getswitchhighlight` returns `visible/target/left/top/right/bottom/thickness`.
+
 ### Error Handling
+
 - Minimal try/catch; many P/Invoke calls assume success.
 - `AppWindow` process-name resolution falls back to `Process.GetProcessById` on failure.
 
@@ -188,6 +195,8 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 | `Switcheroo/PortableSettingsProvider.cs` | Custom `SettingsProvider` for portable XML persistence |
 | `Installer/Installer.iss` | Inno Setup installer script |
 | `Installer/Build.xml` | MSBuild targets for setup + portable packaging |
+| `.github/workflows/build.yml` | CI: restore, build Debug, run NUnit tests on push/PR to master |
+| `.github/workflows/release.yml` | CI/CD: on a `v*` tag stamps the version, builds Release, runs tests, packages zip + setup, creates the GitHub release |
 
 ---
 
@@ -195,10 +204,10 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 
 | Aspect | Current |
 |--------|---------|
-| Runtime | .NET Framework 4.5 (all projects) |
+| Runtime | .NET Framework 4.8 (all projects) |
 | Language | C# 5 (no `async/await`, no `?.`) |
 | UI Framework | WPF (XAML + code-behind) |
-| Build | MSBuild 12.0 / Visual Studio 2013+ solution (`Switcheroo.sln`) |
+| Build | MSBuild (VS2022) via `build.ps1` locally; CI uses `msbuild` directly |
 | Installer | Inno Setup 5 (bundled in `Installer/InnoSetup/`) |
 | Packaging | MSBuild Community Tasks (`Build.xml`) |
 | Package Manager | NuGet (`packages.config` style) |
@@ -214,9 +223,21 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 
 ---
 
+## CI/CD
+
+- `.github/workflows/build.yml` runs on pushes/PRs to `master` (and `workflow_dispatch`): `nuget restore` → `msbuild` Debug → NUnit console runner → uploads `TestResult.xml`.
+- `.github/workflows/release.yml` runs on **tag pushes matching `v*`** (and manual dispatch with a tag): stamps `AssemblyVersion`/`AssemblyFileVersion` from the tag, builds Release, runs tests, packages `Installer\Output\switcheroo-portable.zip` and `Installer\switcheroo-setup.exe` (bundled ISCC, `Installer/Build.xml`), then creates the GitHub release with both files via `gh release create` and the workflow's `GITHUB_TOKEN`.
+- Nothing is built by CI before a tag is pushed; a tag only triggers workflows that already exist in the tagged commit.
+- Checking a run (the repo owner's token, not the ambient gh account): `gh run list --workflow release.yml`, `gh run watch <id> --exit-status` (non-zero on failure), `gh run view <id> --log-failed`, `gh release view <tag> --json assets`.
+- `packages/` is not tracked: local builds and CI both need `nuget restore Switcheroo.sln` first (the low-priority `build.ps1` assumes it).
+- Push credentials: the loaded Pageant key resolves to an account without access to this private repo ("Repository not found"), so pushes use HTTPS with a `gh` token for the owner account; no SSH keys are touched.
+
+---
+
 ## Testing & QA
 
-- **Framework:** NUnit 2.6.3
+
+- **Framework:** NUnit 3.13.3 (console runner 3.17.0)
 - **Test files:**
   - `Core.UnitTests/ContainsMatcherTest.cs` — substring matching, case insensitivity, score
   - `Core.UnitTests/StartsWithMatcherTests.cs` — prefix matching, segmentation

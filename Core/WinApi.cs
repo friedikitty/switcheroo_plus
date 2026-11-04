@@ -54,7 +54,35 @@ namespace Switcheroo.Core
         public static readonly IntPtr HWND_TOP = IntPtr.Zero;
         public const uint SWP_NOSIZE = 0x0001;
         public const uint SWP_NOMOVE = 0x0002;
+        public const uint SWP_NOZORDER = 0x0004;
         public const uint SWP_NOACTIVATE = 0x0010;
+
+        /// <summary>DWMWA_EXTENDED_FRAME_BOUNDS - the visible frame, without the invisible resize border.</summary>
+        public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+
+        [DllImport("dwmapi.dll")]
+        public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attribute, out RECT value, int size);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+        public const int SM_XVIRTUALSCREEN = 76;
+        public const int SM_YVIRTUALSCREEN = 77;
+        public const int SM_CXVIRTUALSCREEN = 78;
+        public const int SM_CYVIRTUALSCREEN = 79;
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int index);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
 
         public enum GetAncestorFlags
         {

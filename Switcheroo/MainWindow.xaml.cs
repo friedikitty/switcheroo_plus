@@ -73,6 +73,7 @@ namespace Switcheroo
         private AutomationServer _automationServer;
         private TaskbarBadgeOverlay _taskbarBadges;
         private DispatcherTimer _badgeWarmUpTimer;
+        private SwitchHighlight _switchHighlight;
         private readonly bool _autoMode;
 
         // Most-recently-used window tracking (front = most recent). Used to keep
@@ -104,6 +105,7 @@ namespace Switcheroo
 
             SetUpForegroundTracking();
             ScheduleTaskbarBadgeWarmUp();
+            PreWarmSwitchHighlight();
 
             if (!_autoMode)
                 CheckForUpdates();
@@ -305,6 +307,25 @@ namespace Switcheroo
             _taskbarBadges.WarmUp();
         }
 
+        /// <summary>
+        /// Builds the switch-highlight edge windows at idle priority: creating a
+        /// handful of WPF windows costs tens of ms each, and paying that on the
+        /// first switch would delay the very animation it draws.
+        /// </summary>
+        private void PreWarmSwitchHighlight()
+        {
+            if (!_config.SwitchHighlightEnabled)
+                return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                if (!_config.SwitchHighlightEnabled)
+                    return;
+                if (_switchHighlight == null)
+                    _switchHighlight = new SwitchHighlight();
+                _switchHighlight.PreWarm();
+            }));
+        }
+
         private void ActivateAppWindow(AppWindow currentWindow, AppWindow targetWindow, bool hideWindowAfterSwitch)
         {
             if (targetWindow == null)
@@ -319,8 +340,34 @@ namespace Switcheroo
             // another app had the most recent input (previous-app hotkey path).
             targetWindow.ForceSwitchToLastVisibleActivePopup();
 
+            FlashSwitchTarget(targetWindow);
+
             if (hideWindowAfterSwitch)
                 HideWindow();
+        }
+
+        /// <summary>
+        /// Briefly frames the window that just became active so the user sees
+        /// where the switch landed (Alt+Tab included - every switch path ends up
+        /// in ActivateAppWindow).
+        /// </summary>
+        private void FlashSwitchTarget(AppWindow targetWindow)
+        {
+            if (!_config.SwitchHighlightEnabled)
+                return;
+
+            // Prefer where the switch actually landed (UWP lands on an inner popup),
+            // but never trust a foreground window owned by another process - that
+            // only happens when the activation itself was denied.
+            var hwnd = WinApi.GetForegroundWindow();
+            if (hwnd == IntPtr.Zero ||
+                hwnd == new WindowInteropHelper(this).Handle ||
+                WinApi.GetWindowProcessId(hwnd) != WinApi.GetWindowProcessId(targetWindow.HWnd))
+                hwnd = targetWindow.HWnd;
+
+            if (_switchHighlight == null)
+                _switchHighlight = new SwitchHighlight();
+            _switchHighlight.Flash(hwnd);
         }
 
         /// <summary>
@@ -886,6 +933,11 @@ namespace Switcheroo
                 _badgeWarmUpTimer.Stop();
                 _badgeWarmUpTimer = null;
             }
+            if (_switchHighlight != null)
+            {
+                _switchHighlight.Dispose();
+                _switchHighlight = null;
+            }
             if (_taskbarBadges != null)
             {
                 _taskbarBadges.Close();
@@ -998,6 +1050,25 @@ namespace Switcheroo
             if (_taskbarBadges == null)
                 return new List<Dictionary<string, string>>();
             return _taskbarBadges.GetBadgeList();
+        }
+
+        /// <summary>Test hook: state of the switch-highlight border (used by the automation pipe).</summary>
+        public Dictionary<string, string> GetSwitchHighlightState()
+        {
+            var state = new Dictionary<string, string>();
+            if (_switchHighlight == null)
+            {
+                state["visible"] = "false";
+                return state;
+            }
+            state["visible"] = _switchHighlight.IsVisible ? "true" : "false";
+            state["target"] = _switchHighlight.Target.ToInt64().ToString();
+            state["left"] = _switchHighlight.Left.ToString();
+            state["top"] = _switchHighlight.Top.ToString();
+            state["right"] = _switchHighlight.Right.ToString();
+            state["bottom"] = _switchHighlight.Bottom.ToString();
+            state["thickness"] = _switchHighlight.CurrentThickness.ToString();
+            return state;
         }
 
         public void SelectIndex(int index)

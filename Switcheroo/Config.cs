@@ -73,6 +73,9 @@ namespace Switcheroo
         // Seconds before taskbar badges auto-hide; 0 = stay until the overlay closes
         public int TaskbarBadgeTimeoutSeconds { get; set; } = 10;
 
+        // Flash a short accent border around the window you just switched to
+        public bool SwitchHighlightEnabled { get; set; } = true;
+
         /// <summary>
         /// Legacy config directory used by older builds. Kept for one-time migration.
         /// </summary>
@@ -315,7 +318,10 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"TaskbarBadgesEnabled\": {0},", Bool(cfg.TaskbarBadgesEnabled)));
             sb.AppendLine();
             sb.AppendLine("  // Seconds before taskbar badges auto-hide; 0 = stay until the overlay closes");
-            sb.AppendLine(string.Format("  \"TaskbarBadgeTimeoutSeconds\": {0}", cfg.TaskbarBadgeTimeoutSeconds));
+            sb.AppendLine(string.Format("  \"TaskbarBadgeTimeoutSeconds\": {0},", cfg.TaskbarBadgeTimeoutSeconds));
+            sb.AppendLine();
+            sb.AppendLine("  // Flash a short accent border around the window you just switched to");
+            sb.AppendLine(string.Format("  \"SwitchHighlightEnabled\": {0}", Bool(cfg.SwitchHighlightEnabled)));
             sb.AppendLine("}");
             return sb.ToString();
         }

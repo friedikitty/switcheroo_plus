@@ -1,0 +1,243 @@
+using System;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Threading;
+using Switcheroo.Core;
+
+namespace Switcheroo
+{
+    /// <summary>
+    /// Draws a short accent border pulse around the window the user just
+    /// switched to, so it is obvious where the switch landed.
+    ///
+    /// Four thin opaque, click-through, topmost windows form the frame. Opaque
+    /// non-layered windows are the only overlay form verified to render reliably
+    /// on this machine (see the taskbar badges); positions are set in physical
+    /// pixels with SetWindowPos, so mixed-DPI setups do not need DIP conversion.
+    /// The windows are created once, parked off-screen, and re-positioned per
+    /// flash - creating or re-showing a WPF window costs tens of milliseconds.
+    ///
+    /// The pulse is 3 px for 160 ms, 2 px for 80 ms, 1 px for 80 ms, then parked.
+    /// A timer always parks the frame, so a target that disappears mid-pulse
+    /// cannot leave a border behind.
+    /// </summary>
+    public class SwitchHighlight : IDisposable
+    {
+        private const int MaxThickness = 3;
+        private const int OffScreen = -30000;
+        private const int HoldFirstStepMs = 160;
+        private const int HoldStepMs = 80;
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TRANSPARENT = 0x20;
+        private const int WS_EX_TOOLWINDOW = 0x80;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+
+        private static readonly Color Accent = Color.FromRgb(0x00, 0x78, 0xD4);
+
+        private readonly Window[] _edges = new Window[4];
+        private readonly IntPtr[] _handles = new IntPtr[4];
+        private DispatcherTimer _pulse;
+        private int _step;
+        private bool _visible;
+
+        /// <summary>True while the border is on screen.</summary>
+        public bool IsVisible
+        {
+            get { return _visible; }
+        }
+
+        /// <summary>Window the current/last pulse was drawn around.</summary>
+        public IntPtr Target { get; private set; }
+
+        public int Left { get; private set; }
+        public int Top { get; private set; }
+        public int Right { get; private set; }
+        public int Bottom { get; private set; }
+
+        /// <summary>Thickness of the pulse right now (0 = parked).</summary>
+        public int CurrentThickness { get; private set; }
+
+        /// <summary>
+        /// Creates the four edge windows early, at a moment the UI can afford it,
+        /// so the first real switch does not pay window creation.
+        /// </summary>
+        public void PreWarm()
+        {
+            EnsureWindows();
+        }
+
+        public void Flash(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero)
+                return;
+
+            // Minimized windows sit at the -32000 parking position; drawing there
+            // is invisible, and flashing a window that never came up is noise.
+            if (WinApi.IsIconic(hwnd) || !WinApi.IsWindowVisible(hwnd))
+                return;
+
+            WinApi.RECT frame;
+            if (!TryGetFrame(hwnd, out frame))
+                return;
+            if (frame.Right <= frame.Left || frame.Bottom <= frame.Top)
+                return;
+            if (!IntersectsVirtualScreen(frame))
+                return;
+
+            EnsureWindows();
+
+            Target = hwnd;
+            Left = frame.Left;
+            Top = frame.Top;
+            Right = frame.Right;
+            Bottom = frame.Bottom;
+
+            _step = 0;
+            ApplyThickness(MaxThickness);
+            _visible = true;
+
+            if (_pulse == null)
+            {
+                _pulse = new DispatcherTimer();
+                _pulse.Tick += (sender, args) => Advance();
+            }
+            _pulse.Stop();
+            _pulse.Interval = TimeSpan.FromMilliseconds(HoldFirstStepMs);
+            _pulse.Start();
+        }
+
+        private void Advance()
+        {
+            _step++;
+            if (_step == 1)
+            {
+                ApplyThickness(MaxThickness - 1);
+                _pulse.Interval = TimeSpan.FromMilliseconds(HoldStepMs);
+                return;
+            }
+            if (_step == 2)
+            {
+                ApplyThickness(MaxThickness - 2);
+                _pulse.Interval = TimeSpan.FromMilliseconds(HoldStepMs);
+                return;
+            }
+            _pulse.Stop();
+            Park();
+            _visible = false;
+        }
+
+        private void ApplyThickness(int thickness)
+        {
+            CurrentThickness = thickness;
+            var width = Right - Left;
+            var height = Bottom - Top;
+
+            ApplyEdge(0, Left, Top, width, thickness);
+            ApplyEdge(1, Left, Bottom - thickness, width, thickness);
+            ApplyEdge(2, Left, Top, thickness, height);
+            ApplyEdge(3, Right - thickness, Top, thickness, height);
+        }
+
+        private void ApplyEdge(int index, int x, int y, int width, int height)
+        {
+            if (width <= 0 || height <= 0)
+                return;
+            WinApi.SetWindowPos(_handles[index], IntPtr.Zero, x, y, width, height,
+                WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
+        }
+
+        private void Park()
+        {
+            for (var i = 0; i < _handles.Length; i++)
+            {
+                WinApi.SetWindowPos(_handles[i], IntPtr.Zero, OffScreen, OffScreen, 1, 1,
+                    WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
+            }
+            CurrentThickness = 0;
+        }
+
+        private void EnsureWindows()
+        {
+            for (var i = 0; i < _edges.Length; i++)
+            {
+                if (_edges[i] != null)
+                    continue;
+                var window = new Window
+                {
+                    WindowStyle = WindowStyle.None,
+                    ResizeMode = ResizeMode.NoResize,
+                    AllowsTransparency = false,
+                    Background = new SolidColorBrush(Accent),
+                    Topmost = true,
+                    ShowInTaskbar = false,
+                    ShowActivated = false,
+                    IsHitTestVisible = false,
+                    Left = OffScreen,
+                    Top = OffScreen,
+                    Width = 1,
+                    Height = 1
+                };
+                var handle = new WindowInteropHelper(window).EnsureHandle();
+                var style = GetWindowLong(handle, GWL_EXSTYLE) |
+                            WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+                SetWindowLong(handle, GWL_EXSTYLE, style);
+                // Show once and keep it shown: parked, then moved into place.
+                window.Show();
+                WinApi.SetWindowPos(handle, IntPtr.Zero, OffScreen, OffScreen, 1, 1,
+                    WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
+                _edges[i] = window;
+                _handles[i] = handle;
+            }
+        }
+
+        /// <summary>False when the whole frame sits outside every monitor (minimized parking, disconnected display).</summary>
+        private static bool IntersectsVirtualScreen(WinApi.RECT frame)
+        {
+            var left = WinApi.GetSystemMetrics(WinApi.SM_XVIRTUALSCREEN);
+            var top = WinApi.GetSystemMetrics(WinApi.SM_YVIRTUALSCREEN);
+            var right = left + WinApi.GetSystemMetrics(WinApi.SM_CXVIRTUALSCREEN);
+            var bottom = top + WinApi.GetSystemMetrics(WinApi.SM_CYVIRTUALSCREEN);
+            return frame.Right > left && frame.Left < right && frame.Bottom > top && frame.Top < bottom;
+        }
+
+        private static bool TryGetFrame(IntPtr hwnd, out WinApi.RECT frame)
+        {
+            // The visible frame, not the invisible resize border classic windows have
+            if (WinApi.DwmGetWindowAttribute(hwnd, WinApi.DWMWA_EXTENDED_FRAME_BOUNDS,
+                    out frame, Marshal.SizeOf(typeof(WinApi.RECT))) == 0 &&
+                frame.Right > frame.Left && frame.Bottom > frame.Top)
+            {
+                return true;
+            }
+            return WinApi.GetWindowRect(hwnd, out frame);
+        }
+
+        public void Dispose()
+        {
+            if (_pulse != null)
+            {
+                _pulse.Stop();
+                _pulse = null;
+            }
+            foreach (var window in _edges)
+            {
+                if (window == null)
+                    continue;
+                try { window.Close(); }
+                catch { }
+            }
+            Array.Clear(_edges, 0, _edges.Length);
+            Array.Clear(_handles, 0, _handles.Length);
+            _visible = false;
+            CurrentThickness = 0;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int index);
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hWnd, int index, int value);
+    }
+}
