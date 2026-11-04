@@ -26,6 +26,7 @@ jobs:
         run: msbuild Switcheroo.sln /p:Configuration=Debug /p:UseSharedCompilation=false /v:m /nologo
 
       - name: Unit tests
+        shell: cmd
         run: packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\Debug\Switcheroo.Core.UnitTests.dll --result=TestResult.xml
 
       - name: Upload test results
