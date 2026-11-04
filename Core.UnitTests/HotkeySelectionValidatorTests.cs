@@ -169,17 +169,17 @@ namespace Switcheroo.Core.UnitTests
         }
 
         [Test]
-        public void DefaultConfig_EnablesPreviousAppWithAltTab()
+        public void DefaultConfig_EnablesPreviousAppWithCtrlAltBracket()
         {
             var config = new SwitcherooConfig();
 
             Assert.That(config.PreviousAppEnabled, Is.True);
             Assert.That(config.PreviousAppAlt, Is.True);
-            Assert.That(config.PreviousAppCtrl, Is.False);
+            Assert.That(config.PreviousAppCtrl, Is.True);
             Assert.That(config.PreviousAppShift, Is.False);
             Assert.That(config.PreviousAppWindowsKey, Is.False);
             Assert.That(config.PreviousAppCapsLock, Is.False);
-            Assert.That(config.PreviousAppHotKey, Is.EqualTo(9));
+            Assert.That(config.PreviousAppHotKey, Is.EqualTo(221));
         }
 
         private static HotkeySelection AltTab()

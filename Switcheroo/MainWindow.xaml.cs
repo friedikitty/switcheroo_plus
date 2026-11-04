@@ -98,7 +98,7 @@ namespace Switcheroo
             SizeChanged += MainWindow_SizeChanged;
 
             SetUpKeyBindings();
-            SetUpNotifyIcon();
+            // The watchdog owns the persistent tray icon.
             SetUpHotKey();
             SetUpPreviousAppHotKey();
             SetUpAltTabHook();
@@ -919,7 +919,7 @@ namespace Switcheroo
         /// </summary>
         private void Quit()
         {
-            _notifyIcon.Dispose();
+            if (_notifyIcon != null) _notifyIcon.Dispose();
             _notifyIcon = null;
             if (_automationServer != null)
             {
@@ -980,6 +980,10 @@ namespace Switcheroo
             // Options may have just enabled badges/shortcuts: warm the helper again
             ScheduleTaskbarBadgeWarmUp();
         }
+
+        public void OpenOptionsForShell() { Options(); }
+        public void OpenAboutForShell() { About(); }
+        public void ToggleStartupForShell() { new AutoStart().IsEnabled = !new AutoStart().IsEnabled; }
 
         #region Automation API
 
@@ -1068,6 +1072,11 @@ namespace Switcheroo
             state["right"] = _switchHighlight.Right.ToString();
             state["bottom"] = _switchHighlight.Bottom.ToString();
             state["thickness"] = _switchHighlight.CurrentThickness.ToString();
+            state["dotVisible"] = _switchHighlight.DotVisible ? "true" : "false";
+            state["dotCenterX"] = _switchHighlight.DotCenterX.ToString();
+            state["dotCenterY"] = _switchHighlight.DotCenterY.ToString();
+            state["dotSize"] = _switchHighlight.DotSize.ToString();
+            state["dotOpacity"] = _switchHighlight.DotOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return state;
         }
 

@@ -41,6 +41,10 @@ namespace Switcheroo
         public OptionsWindow()
         {
             InitializeComponent();
+            MaxHeight = SystemParameters.WorkArea.Height;
+            MaxWidth = SystemParameters.WorkArea.Width;
+            Height = Math.Min(Height, MaxHeight);
+            Width = Math.Min(Width, MaxWidth);
 
             _config = ConfigManager.Load();
             RunOnStartup.IsChecked = _config.RunOnStartup || new AutoStart().IsEnabled;

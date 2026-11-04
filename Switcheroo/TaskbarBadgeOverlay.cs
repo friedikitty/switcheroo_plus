@@ -26,7 +26,7 @@ namespace Switcheroo
     /// </summary>
     public class TaskbarBadgeOverlay
     {
-        private const string PipeName = "switcheroo_plus_badges";
+        private static string PipeName { get { return "switcheroo_plus_badges" + Switcheroo.Shell.ShellProtocol.Suffix; } }
         private const string HelperExeName = "switcheroo_plus_badges.exe";
         private const int ConnectTimeoutMs = 300;
         private const int ResponseTimeoutMs = 1000;

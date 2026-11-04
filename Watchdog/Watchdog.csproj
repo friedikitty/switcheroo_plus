@@ -1,0 +1,22 @@
+<Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <ProjectGuid>{9E2B1A57-1A11-4C51-92B4-7F2456BB1021}</ProjectGuid>
+    <OutputType>WinExe</OutputType><AssemblyName>switcheroo_plus_watchdog</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion><Prefer32Bit>false</Prefer32Bit>
+    <OutputPath>..\Switcheroo\bin\$(Configuration)\</OutputPath>
+    <DebugSymbols>true</DebugSymbols><DebugType>pdbonly</DebugType><Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <ApplicationIcon>..\Switcheroo\icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Drawing"/>
+    <Reference Include="System.Windows.Forms"/><Reference Include="System.Web.Extensions"/>
+    <Reference Include="System.Configuration"/>
+    <Compile Include="Program.cs"/><Compile Include="Native.cs"/><Compile Include="Supervisor.cs"/>
+    <Compile Include="..\Shared\ShellProtocol.cs"><Link>ShellProtocol.cs</Link></Compile>
+    <Compile Include="..\Switcheroo\Config.cs"><Link>Config.cs</Link></Compile>
+    <Compile Include="AssemblyInfo.cs"/>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
+</Project>

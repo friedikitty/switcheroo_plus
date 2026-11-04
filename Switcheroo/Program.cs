@@ -36,10 +36,16 @@ namespace Switcheroo
         private static void Main(string[] args)
         {
             var autoMode = IsAutoMode(args);
-            if (!autoMode)
-                RunAsAdministratorIfConfigured();
+            if (Array.IndexOf(args, "--supervised") < 0)
+            {
+                var launcher = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "switcheroo_plus_watchdog.exe");
+                Process.Start(new ProcessStartInfo(launcher, string.Join(" ", Array.ConvertAll(args, a => "\"" + a.Replace("\"", "\\\"") + "\""))) { UseShellExecute = false });
+                return;
+            }
+            if (Switcheroo.Shell.ShellProtocol.TestMode && Environment.GetEnvironmentVariable("SWITCHEROO_TEST_STARTUP_CRASH") == "1")
+                Environment.FailFast("Injected startup crash");
 
-            using (var mutex = new Mutex(false, mutex_id))
+            using (var mutex = new Mutex(false, mutex_id + Switcheroo.Shell.ShellProtocol.Suffix))
             {
                 var hasHandle = false;
                 try
@@ -51,19 +57,20 @@ namespace Switcheroo
                     }
                     catch (AbandonedMutexException)
                     {
-                        // Log the fact the mutex was abandoned in another process, it will still get aquired
+                        hasHandle = true;
                     }
 
 #if PORTABLE
                         MakePortable(Settings.Default);
 #endif
 
-                    MigrateUserSettings();
+                    if (!Switcheroo.Shell.ShellProtocol.TestMode) MigrateUserSettings();
 
                     var app = new App
                     {
                         MainWindow = new MainWindow(autoMode)
                     };
+                    app.Exit += (sender, e) => { try { Switcheroo.Shell.ShellProtocol.Request(Switcheroo.Shell.ShellProtocol.WatchdogPipe, "coreexiting", 500); } catch { } };
                     app.Run();
                 }
                 finally
@@ -88,29 +95,6 @@ namespace Switcheroo
             return false;
         }
 
-        private static void RunAsAdministratorIfConfigured()
-        {
-            if (RunAsAdminRequested() && !IsRunAsAdmin())
-            {
-                ProcessStartInfo proc = new ProcessStartInfo
-                {
-                    UseShellExecute = true,
-                    WorkingDirectory = Environment.CurrentDirectory,
-                    FileName = Assembly.GetEntryAssembly().CodeBase,
-                    Verb = "runas"
-                };
-
-                Process.Start(proc);
-                Environment.Exit(0);
-            }
-        }
-
-        private static bool RunAsAdminRequested()
-        {
-            var cfg = ConfigManager.Load();
-            return cfg.RunAsAdmin;
-        }
-
         private static void MakePortable(ApplicationSettingsBase settings)
         {
             var portableSettingsProvider = new PortableSettingsProvider();
@@ -124,7 +108,13 @@ namespace Switcheroo
 
         private static void MigrateUserSettings()
         {
-            if (!Settings.Default.FirstRun) return;
+            SwitcherooConfig.MigrateLegacyConfig();
+            if (System.IO.File.Exists(SwitcherooConfig.ConfigPath) || !Settings.Default.FirstRun) return;
+            // Upgrade only real legacy overrides; built-in XML defaults are not user choices.
+            bool hasLegacyValues = false;
+            foreach (SettingsPropertyValue value in Settings.Default.PropertyValues)
+                if (!value.UsingDefaultValue) hasLegacyValues = true;
+            if (!hasLegacyValues) return;
 
             Settings.Default.Upgrade();
             Settings.Default.FirstRun = false;
@@ -144,12 +134,5 @@ namespace Switcheroo
             ConfigManager.Save(cfg);
         }
 
-        private static bool IsRunAsAdmin()
-        {
-            WindowsIdentity id = WindowsIdentity.GetCurrent();
-            WindowsPrincipal principal = new WindowsPrincipal(id);
-
-            return principal.IsInRole(WindowsBuiltInRole.Administrator);
-        }
     }
 }

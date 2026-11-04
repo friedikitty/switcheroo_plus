@@ -115,7 +115,7 @@ namespace Switcheroo
 
         private static void CreateShortcut(string appLink)
         {
-            var exeLocation = Process.GetCurrentProcess().MainModule.FileName;
+            var exeLocation = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "switcheroo_plus_watchdog.exe");
 
             //Windows Script Host Shell Object
             var t = Type.GetTypeFromCLSID(new Guid("72C24DD5-D70A-438B-8A42-98424B88AFB8"));

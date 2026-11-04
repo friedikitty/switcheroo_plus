@@ -30,6 +30,32 @@ namespace Switcheroo.Core.UnitTests
             StringAssert.Contains("\"OpenUsageHintsByDefault\": true", json);
             StringAssert.Contains("\"AzShortcutsEnabled\": false", json);
         }
+        [Test]
+        public void FromJson_EmptyObject_UsesSavedUserDefaults()
+        {
+            var c = FromJson("{}");
+            Assert.That(c.EnableHotKey, Is.False);
+            Assert.That(c.AltTabHook, Is.True);
+            Assert.That(c.PreviousAppEnabled && c.PreviousAppCtrl && c.PreviousAppAlt, Is.True);
+            Assert.That(c.PreviousAppHotKey, Is.EqualTo(221));
+            Assert.That(c.MultiColumnEnabled, Is.True);
+            Assert.That(c.WindowWidth, Is.EqualTo(1440));
+            Assert.That(c.WindowHeight, Is.EqualTo(698));
+            Assert.That(c.SwitchHighlightEnabled, Is.True);
+            Assert.That(c.RunAsAdmin || c.RunOnStartup || c.AutoSwitch, Is.False);
+        }
+
+        [Test]
+        public void FromJson_ExplicitOverrides_PreservesValuesAndDefaultsMissingOnes()
+        {
+            var c = FromJson("{\"EnableHotKey\":true,\"AltTabHook\":false,\"WindowWidth\":900,\"PreviousAppHotKey\":9}");
+            Assert.That(c.EnableHotKey, Is.True);
+            Assert.That(c.AltTabHook, Is.False);
+            Assert.That(c.WindowWidth, Is.EqualTo(900));
+            Assert.That(c.PreviousAppHotKey, Is.EqualTo(9));
+            Assert.That(c.WindowHeight, Is.EqualTo(698));
+        }
+
         private static SwitcherooConfig FromJson(string json)
         {
             var method = typeof(ConfigManager).GetMethod("FromJson", BindingFlags.NonPublic | BindingFlags.Static);

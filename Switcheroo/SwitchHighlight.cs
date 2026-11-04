@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Switcheroo.Core;
 
@@ -38,6 +40,14 @@ namespace Switcheroo
 
         private readonly Window[] _edges = new Window[4];
         private readonly IntPtr[] _handles = new IntPtr[4];
+        private Window dot;
+        private IntPtr dotHandle;
+        private readonly System.Diagnostics.Stopwatch dotClock = new System.Diagnostics.Stopwatch();
+        public bool DotVisible { get { return dotClock.IsRunning && dotClock.ElapsedMilliseconds < 600; } }
+        public double DotOpacity { get { return DotVisible ? Math.Max(0, 1 - dotClock.Elapsed.TotalMilliseconds / 600) : 0; } }
+        public int DotCenterX { get; private set; }
+        public int DotCenterY { get; private set; }
+        public int DotSize { get; private set; }
         private DispatcherTimer _pulse;
         private int _step;
         private bool _visible;
@@ -94,6 +104,7 @@ namespace Switcheroo
             Right = frame.Right;
             Bottom = frame.Bottom;
 
+            ShowDot();
             _step = 0;
             ApplyThickness(MaxThickness);
             _visible = true;
@@ -106,6 +117,26 @@ namespace Switcheroo
             _pulse.Stop();
             _pulse.Interval = TimeSpan.FromMilliseconds(HoldFirstStepMs);
             _pulse.Start();
+        }
+
+        private void ShowDot()
+        {
+            DotCenterX = Left + (Right - Left) / 2;
+            DotCenterY = Top + (Bottom - Top) / 2;
+            var source = PresentationSource.FromVisual(dot);
+            double scale = source == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
+            DotSize = (int)Math.Round(48 * scale);
+            // Reassert topmost after fullscreen activation without taking focus.
+            WinApi.SetWindowPos(dotHandle, new IntPtr(-1), DotCenterX - DotSize / 2, DotCenterY - DotSize / 2,
+                DotSize, DotSize, WinApi.SWP_NOACTIVATE);
+            dotClock.Restart();
+            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(600));
+            fade.Completed += (sender, args) =>
+            {
+                if (!DotVisible) WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, DotSize, DotSize,
+                    WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
+            };
+            dot.BeginAnimation(Window.OpacityProperty, fade);
         }
 
         private void Advance()
@@ -160,6 +191,29 @@ namespace Switcheroo
 
         private void EnsureWindows()
         {
+            if (dot == null)
+            {
+                dot = new Window
+                {
+                    WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+                    AllowsTransparency = true, Background = Brushes.Transparent,
+                    Topmost = true, ShowInTaskbar = false, ShowActivated = false, IsHitTestVisible = false,
+                    Left = OffScreen, Top = OffScreen, Width = 48, Height = 48,
+                    Content = new Ellipse
+                    {
+                        Fill = new RadialGradientBrush(new GradientStopCollection
+                        {
+                            new GradientStop(Color.FromArgb(230, 128, 216, 255), 0),
+                            new GradientStop(Color.FromArgb(160, 128, 216, 255), 0.35),
+                            new GradientStop(Color.FromArgb(0, 128, 216, 255), 1)
+                        })
+                    }
+                };
+                dotHandle = new WindowInteropHelper(dot).EnsureHandle();
+                SetWindowLong(dotHandle, GWL_EXSTYLE, GetWindowLong(dotHandle, GWL_EXSTYLE) |
+                    WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+                dot.Show();
+            }
             for (var i = 0; i < _edges.Length; i++)
             {
                 if (_edges[i] != null)
@@ -216,6 +270,8 @@ namespace Switcheroo
 
         public void Dispose()
         {
+            dotClock.Stop();
+            if (dot != null) { dot.Close(); dot = null; dotHandle = IntPtr.Zero; }
             if (_pulse != null)
             {
                 _pulse.Stop();

@@ -34,7 +34,7 @@ namespace Switcheroo.Automation
     /// </summary>
     public class AutomationServer : IDisposable
     {
-        private const string PipeName = "switcheroo_plus_automation";
+        private static string PipeName { get { return Switcheroo.Shell.ShellProtocol.CorePipe; } }
         private readonly MainWindow _mainWindow;
         private NamedPipeServerStream _pipeServer;
         private CancellationTokenSource _cts;
@@ -85,7 +85,7 @@ namespace Switcheroo.Automation
                         PipeDirection.InOut,
                         1,
                         PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
+                        PipeOptions.Asynchronous, 4096, 4096, Switcheroo.Shell.ShellProtocol.Security());
                     _pipeServer = localPipe;
 
                     localPipe.WaitForConnection();
@@ -166,9 +166,21 @@ namespace Switcheroo.Automation
             {
                 case "ping":
                     response["ok"] = true;
+                    response["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id;
                     response["visible"] = _mainWindow.Visibility == Visibility.Visible;
                     break;
 
+                case "options":
+                    _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.OpenOptionsForShell)); response["ok"] = true; break;
+                case "about":
+                    _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.OpenAboutForShell)); response["ok"] = true; break;
+                case "startup":
+                    _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.ToggleStartupForShell)); response["ok"] = true; break;
+                case "fault":
+                    if (!Switcheroo.Shell.ShellProtocol.TestMode) { response["error"] = "Test mode required"; break; }
+                    string kind = request.ContainsKey("kind") ? request["kind"] : "managed";
+                    _mainWindow.Dispatcher.BeginInvoke(new Action(() => InjectFault(kind)));
+                    response["ok"] = true; break;
                 case "show":
                     _mainWindow.ShowAndActivate();
                     response["ok"] = true;
@@ -272,6 +284,19 @@ namespace Switcheroo.Automation
                     response["error"] = "unknown action: " + action;
                     break;
             }
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern void RaiseException(uint code, uint flags, uint count, IntPtr arguments);
+        private static void InjectFault(string kind)
+        {
+            if (kind == "hang") { System.Threading.Thread.Sleep(Timeout.Infinite); return; }
+            if (kind == "recoverablehang") { System.Threading.Thread.Sleep(16000); return; }
+            if (kind == "failfast") { Environment.FailFast("Injected fail-fast crash"); return; }
+            if (kind == "native") { RaiseException(0xc0000005, 1, 0, IntPtr.Zero); return; }
+            if (kind == "background") { new Thread(() => { throw new InvalidOperationException("Injected background crash"); }).Start(); return; }
+            if (kind == "handled") { try { throw new InvalidOperationException("Injected handled exception"); } catch (InvalidOperationException) { } return; }
+            throw new InvalidOperationException("Injected UI crash");
         }
 
         private static async System.Threading.Tasks.Task WriteResponse(TextWriter writer, Dictionary<string, object> response)

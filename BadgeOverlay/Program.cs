@@ -42,7 +42,7 @@ namespace SwitcherooBadgeOverlay
     /// </summary>
     internal static class Program
     {
-        private const string PipeName = "switcheroo_plus_badges";
+        private static string PipeName { get { return "switcheroo_plus_badges" + Switcheroo.Shell.ShellProtocol.Suffix; } }
 
         // Cached taskbar geometry older than this is refreshed in the background.
         // Window open/close is caught by the title-set check, so this only needs
@@ -97,7 +97,7 @@ namespace SwitcherooBadgeOverlay
         private static int Main()
         {
             bool createdNew;
-            var mutex = new Mutex(true, "switcheroo_plus_badges_single_instance", out createdNew);
+            var mutex = new Mutex(true, "switcheroo_plus_badges_single_instance" + Switcheroo.Shell.ShellProtocol.Suffix, out createdNew);
             if (!createdNew)
                 return 0;
 

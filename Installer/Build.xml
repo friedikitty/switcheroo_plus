@@ -18,6 +18,7 @@
   </Target>
   
   <Target Name="CreateSetup">
+    <MSBuild Projects="$(SolutionDir)\Watchdog\Watchdog.csproj" Targets="$(BuildTarget)" Properties="Configuration=$(Configuration);" />
     <!-- Build the badge helper first: the installer picks up *.exe from the app's bin folder -->
     <MSBuild Projects="$(SolutionDir)\BadgeOverlay\BadgeOverlay.csproj"
              Targets="$(BuildTarget)"
@@ -38,6 +39,7 @@
   </Target>
   
   <Target Name="CreatePortable">
+    <MSBuild Projects="$(SolutionDir)\Watchdog\Watchdog.csproj" Targets="$(BuildTarget)" Properties="Configuration=$(Configuration);" />
     <MSBuild Projects="$(SolutionDir)\BadgeOverlay\BadgeOverlay.csproj"
              Targets="$(BuildTarget)"
              Properties="Configuration=$(Configuration);" />

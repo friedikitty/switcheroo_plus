@@ -1,7 +1,7 @@
 #define MyAppName "Switcheroo"
 #define MyAppPublisher "Regin Larsen"
 #define MyAppURL "http://www.switcheroo.io"
-#define MyAppExeName "switcheroo_plus.exe"
+#define MyAppExeName "switcheroo_plus_watchdog.exe"
 #define MyAppPath SourcePath + "ProgramFiles"
 #define MyAppVer = GetFileVersion(MyAppPath + "\switcheroo_plus.exe")
 
@@ -31,6 +31,7 @@ Name: desktopicon; Description: {cm:CreateDesktopIcon}; GroupDescription: {cm:Ad
 Name: startupfolder; Description: Startup with Windows
 
 [Files]
+Source: {#MyAppPath}\switcheroo_plus_watchdog.exe; DestDir: {app}; Flags: ignoreversion
 Source: {#MyAppPath}\switcheroo_plus.exe; DestDir: {app}; Flags: ignoreversion
 Source: {#MyAppPath}\switcheroo_plus_badges.exe; DestDir: {app}; Flags: ignoreversion
 Source: {#MyAppPath}\*.dll; DestDir: {app}; Flags: ignoreversion

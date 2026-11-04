@@ -37,12 +37,13 @@ jobs:
           if (-not $tag) { $tag = "${{ github.ref_name }}" }
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "unexpected tag '$tag'" }
           $ver = ($tag -replace '^v', '') + '.0'
-          $path = 'Switcheroo/Properties/AssemblyInfo.cs'
+          foreach ($path in @('Switcheroo/Properties/AssemblyInfo.cs', 'Watchdog/AssemblyInfo.cs')) {
           $text = Get-Content $path -Raw
           $text = $text -replace 'AssemblyVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyVersion(`"$ver`")"
           $text = $text -replace 'AssemblyFileVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyFileVersion(`"$ver`")"
           Set-Content -Path $path -Value $text -NoNewline
           "Stamped $ver into $path"
+          }
 
       - name: Install NUnit console runner
         run: nuget install NUnit.ConsoleRunner -Version 3.17.0 -OutputDirectory packages -NonInteractive
@@ -59,6 +60,10 @@ jobs:
 
       - name: Package installer
         run: msbuild Installer\Build.xml /t:CreateSetup /p:Configuration=Release /v:m /nologo
+
+      - name: Package symbols
+        shell: pwsh
+        run: Compress-Archive -Path Switcheroo/bin/Release/*.pdb -DestinationPath Installer/Output/switcheroo-symbols.zip -Force
 
       - name: Upload package output
         if: always()
@@ -80,4 +85,5 @@ jobs:
           if (-not $tag) { $tag = "${{ github.ref_name }}" }
           gh release create $tag --repo "${{ github.repository }}" --title "$tag" --generate-notes `
             "Installer/Output/switcheroo-portable.zip" `
-            "Installer/Output/switcheroo-setup.exe"
+            "Installer/Output/switcheroo-setup.exe" `
+            "Installer/Output/switcheroo-symbols.zip"

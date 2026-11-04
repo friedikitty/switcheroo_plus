@@ -42,22 +42,22 @@ namespace Switcheroo
         // Previous-app toggle hotkey
         public bool PreviousAppEnabled { get; set; } = true;
         public bool PreviousAppAlt { get; set; } = true;
-        public bool PreviousAppCtrl { get; set; } = false;
+        public bool PreviousAppCtrl { get; set; } = true;
         public bool PreviousAppShift { get; set; } = false;
         public bool PreviousAppWindowsKey { get; set; } = false;
         public bool PreviousAppCapsLock { get; set; } = false;
-        public int PreviousAppHotKey { get; set; } = 9; // Tab
+        public int PreviousAppHotKey { get; set; } = 221; // ]
 
         // Behaviour toggles
-        public bool AltTabHook { get; set; } = false;
+        public bool AltTabHook { get; set; } = true;
         public bool AutoSwitch { get; set; } = false;
         public bool RunAsAdmin { get; set; } = false;
-        public bool EnableHotKey { get; set; } = true;
+        public bool EnableHotKey { get; set; } = false;
         public bool RunOnStartup { get; set; } = false;
         public bool OpenUsageHintsByDefault { get; set; } = false;
-        public int WindowWidth { get; set; } = 0;
-        public int WindowHeight { get; set; } = 0;
-        public bool MultiColumnEnabled { get; set; } = false;
+        public int WindowWidth { get; set; } = 1440;
+        public int WindowHeight { get; set; } = 698;
+        public bool MultiColumnEnabled { get; set; } = true;
 
         // Pinned-recent list ordering: previous app stays first, the rest of the
         // top group is alphabetical so the visible order stays stable.
@@ -73,7 +73,7 @@ namespace Switcheroo
         // Seconds before taskbar badges auto-hide; 0 = stay until the overlay closes
         public int TaskbarBadgeTimeoutSeconds { get; set; } = 10;
 
-        // Flash a short accent border around the window you just switched to
+        // Show an accent border and fading blue dot on the activated window
         public bool SwitchHighlightEnabled { get; set; } = true;
 
         /// <summary>
@@ -98,6 +98,8 @@ namespace Switcheroo
         {
             get
             {
+                if (!string.IsNullOrEmpty(Switcheroo.Shell.ShellProtocol.ConfigRoot))
+                    return Switcheroo.Shell.ShellProtocol.ConfigRoot;
                 return Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     ".config",
@@ -117,7 +119,7 @@ namespace Switcheroo
         {
             try
             {
-                if (!File.Exists(LegacyConfigPath))
+                if (Switcheroo.Shell.ShellProtocol.TestMode || !File.Exists(LegacyConfigPath))
                     return;
                 if (File.Exists(ConfigPath))
                     return;
@@ -320,7 +322,7 @@ namespace Switcheroo
             sb.AppendLine("  // Seconds before taskbar badges auto-hide; 0 = stay until the overlay closes");
             sb.AppendLine(string.Format("  \"TaskbarBadgeTimeoutSeconds\": {0},", cfg.TaskbarBadgeTimeoutSeconds));
             sb.AppendLine();
-            sb.AppendLine("  // Flash a short accent border around the window you just switched to");
+            sb.AppendLine("  // Show an accent border and fading blue dot on the activated window");
             sb.AppendLine(string.Format("  \"SwitchHighlightEnabled\": {0}", Bool(cfg.SwitchHighlightEnabled)));
             sb.AppendLine("}");
             return sb.ToString();
