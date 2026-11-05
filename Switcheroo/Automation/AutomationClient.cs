@@ -55,6 +55,7 @@ namespace Switcheroo.Automation
                 case "previousapp":
                 case "getwindows":
                 case "getconfig":
+                case "checkorder":
                 case "exit":
                     break;
 

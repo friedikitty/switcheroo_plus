@@ -212,6 +212,10 @@ namespace Switcheroo.Automation
                     response["highlight"] = _mainWindow.GetSwitchHighlightState();
                     break;
 
+                case "checkorder":
+                    response["checks"] = _mainWindow.RunOrderingCheckForTest();
+                    break;
+
                 case "getwindows":
                     response["windows"] = _mainWindow.GetWindowList();
                     break;

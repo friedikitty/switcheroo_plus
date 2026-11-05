@@ -42,6 +42,9 @@ namespace Switcheroo.Core.UnitTests
             Assert.That(c.WindowWidth, Is.EqualTo(1440));
             Assert.That(c.WindowHeight, Is.EqualTo(698));
             Assert.That(c.SwitchHighlightEnabled, Is.True);
+            Assert.That(c.RecentWindowsOnTopEnabled, Is.True);
+            Assert.That(c.RecentWindowsOnTopCount, Is.EqualTo(5));
+            Assert.That(c.DisableImeOnQuickJumpEnabled, Is.True);
             Assert.That(c.RunAsAdmin || c.RunOnStartup || c.AutoSwitch, Is.False);
         }
 

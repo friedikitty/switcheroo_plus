@@ -3,8 +3,6 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Switcheroo.Core;
 
@@ -14,11 +12,17 @@ namespace Switcheroo
     /// Draws a short accent border pulse around the window the user just
     /// switched to, so it is obvious where the switch landed.
     ///
-    /// Four thin opaque, click-through, topmost windows form the frame. Opaque
+    /// Five opaque, click-through, topmost windows form the feedback: four thin
+    /// edges for the frame plus a solid dot at the window's center. Opaque
     /// non-layered windows are the only overlay form verified to render reliably
-    /// on this machine (see the taskbar badges). The windows are created once,
-    /// parked off-screen, and re-positioned per flash - creating or re-showing a
-    /// WPF window costs tens of milliseconds.
+    /// on every display of the target machine (same technique as the taskbar
+    /// badges): per-pixel-alpha layered windows never composite on some display
+    /// pipelines (GameViewer-style virtual displays) and are suppressed over
+    /// screen-covering topmost windows, and probing them proved time-varying, so
+    /// the pretty gradient dot was replaced by this solid chip. The windows are
+    /// created once, parked off-screen, and re-positioned per flash - creating
+    /// or re-showing a WPF window costs tens of milliseconds, and parking never
+    /// resizes (a resized-then-moved window can come back unpainted).
     ///
     /// This process is DPI-unaware, so SetWindowPos, WPF and GetWindowRect all
     /// speak the virtualized logical coordinate space, while DWM reports frame
@@ -27,9 +31,9 @@ namespace Switcheroo
     /// put the pulse ~1.5x off target on mixed-DPI monitors.
     ///
     /// The pulse is 3 px for 160 ms, 2 px for 80 ms, 1 px for 80 ms, then parked.
-    /// A timer always parks the frame, so a target that disappears mid-pulse
-    /// cannot leave a border behind. A soft light-blue dot fades out over 600 ms
-    /// at the window's center.
+    /// The dot holds for 800 ms at the window's center, then parks. Timers always
+    /// park every window, so a target that disappears mid-pulse cannot leave
+    /// artifacts behind.
     /// </summary>
     public class SwitchHighlight : IDisposable
     {
@@ -37,7 +41,8 @@ namespace Switcheroo
         private const int OffScreen = -30000;
         private const int HoldFirstStepMs = 160;
         private const int HoldStepMs = 80;
-        private const int DotDiameter = 48;
+        private const int DotDiameter = 64;
+        private const int DotHoldMs = 800;
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x20;
         private const int WS_EX_TOOLWINDOW = 0x80;
@@ -49,9 +54,10 @@ namespace Switcheroo
         private readonly IntPtr[] _handles = new IntPtr[4];
         private Window dot;
         private IntPtr dotHandle;
+        private DispatcherTimer dotHold;
         private readonly System.Diagnostics.Stopwatch dotClock = new System.Diagnostics.Stopwatch();
-        public bool DotVisible { get { return dotClock.IsRunning && dotClock.ElapsedMilliseconds < 600; } }
-        public double DotOpacity { get { return DotVisible ? Math.Max(0, 1 - dotClock.Elapsed.TotalMilliseconds / 600) : 0; } }
+        public bool DotVisible { get { return dotClock.IsRunning && dotClock.ElapsedMilliseconds < DotHoldMs; } }
+        public double DotOpacity { get { return DotVisible ? 1 : 0; } }
         public int DotCenterX { get; private set; }
         public int DotCenterY { get; private set; }
         public int DotSize { get; private set; }
@@ -77,8 +83,8 @@ namespace Switcheroo
         public int CurrentThickness { get; private set; }
 
         /// <summary>
-        /// Creates the four edge windows early, at a moment the UI can afford it,
-        /// so the first real switch does not pay window creation.
+        /// Creates the five overlay windows early, at a moment the UI can afford
+        /// it, so the first real switch does not pay window creation.
         /// </summary>
         public void PreWarm()
         {
@@ -136,20 +142,33 @@ namespace Switcheroo
             DotCenterX = Left + (Right - Left) / 2;
             DotCenterY = Top + (Bottom - Top) / 2;
             // A constant logical size is right on every monitor: in this
-            // DPI-unaware process 48 logical px are composed as 48 DIP worth of
-            // physical pixels whatever the target display's scale is.
+            // DPI-unaware process the logical size is composed as the same DIP
+            // worth of physical pixels whatever the target display's scale is.
             DotSize = DotDiameter;
             // Reassert topmost after fullscreen activation without taking focus.
             WinApi.SetWindowPos(dotHandle, new IntPtr(-1), DotCenterX - DotSize / 2, DotCenterY - DotSize / 2,
                 DotSize, DotSize, WinApi.SWP_NOACTIVATE);
             dotClock.Restart();
-            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(600));
-            fade.Completed += (sender, args) =>
+            if (dotHold == null)
             {
-                if (!DotVisible) WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, DotSize, DotSize,
-                    WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
-            };
-            dot.BeginAnimation(Window.OpacityProperty, fade);
+                dotHold = new DispatcherTimer();
+                dotHold.Tick += (sender, args) =>
+                {
+                    dotHold.Stop();
+                    if (!DotVisible) ParkDot();
+                };
+            }
+            dotHold.Stop();
+            dotHold.Interval = TimeSpan.FromMilliseconds(DotHoldMs);
+            dotHold.Start();
+        }
+
+        private void ParkDot()
+        {
+            if (dotHold != null) dotHold.Stop();
+            if (dotHandle != IntPtr.Zero)
+                WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
+                    WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE | WinApi.SWP_NOSIZE);
         }
 
         private void Advance()
@@ -209,23 +228,19 @@ namespace Switcheroo
                 dot = new Window
                 {
                     WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
-                    AllowsTransparency = true, Background = Brushes.Transparent,
+                    AllowsTransparency = false,
+                    Background = new SolidColorBrush(Color.FromRgb(128, 216, 255)),
                     Topmost = true, ShowInTaskbar = false, ShowActivated = false, IsHitTestVisible = false,
-                    Left = OffScreen, Top = OffScreen, Width = DotDiameter, Height = DotDiameter,
-                    Content = new Ellipse
-                    {
-                        Fill = new RadialGradientBrush(new GradientStopCollection
-                        {
-                            new GradientStop(Color.FromArgb(230, 128, 216, 255), 0),
-                            new GradientStop(Color.FromArgb(160, 128, 216, 255), 0.35),
-                            new GradientStop(Color.FromArgb(0, 128, 216, 255), 1)
-                        })
-                    }
+                    Left = OffScreen, Top = OffScreen, Width = DotDiameter, Height = DotDiameter
                 };
                 dotHandle = new WindowInteropHelper(dot).EnsureHandle();
                 SetWindowLong(dotHandle, GWL_EXSTYLE, GetWindowLong(dotHandle, GWL_EXSTYLE) |
                     WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
                 dot.Show();
+                // Park by position only: a 1x1 resize would leave the window
+                // unpainted when moved back into place (same war story as the badges).
+                WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
+                    WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE | WinApi.SWP_NOSIZE);
             }
             for (var i = 0; i < _edges.Length; i++)
             {
@@ -300,6 +315,7 @@ namespace Switcheroo
         {
             dotClock.Stop();
             if (dot != null) { dot.Close(); dot = null; dotHandle = IntPtr.Zero; }
+            if (dotHold != null) { dotHold.Stop(); dotHold = null; }
             if (_pulse != null)
             {
                 _pulse.Stop();

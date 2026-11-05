@@ -427,20 +427,18 @@ namespace Switcheroo
 
         /// <summary>
         /// Orders the window list. When RecentWindowsOnTopEnabled is on, the most
-        /// recently used windows are pinned at the top: the previous app keeps slot
-        /// 0 (so Enter / Alt+Tab-release still switches back to it) and the rest of
-        /// the group is sorted alphabetically, keeping the visible order stable.
-        /// Everything else is alphabetical by process name and title. When the
-        /// option is off, the whole list is ordered by recency (legacy behavior).
-        /// Recency comes from TrackForegroundWindow().
+        /// recently used windows are pinned at the top in recency order: the
+        /// previous app keeps slot 0 (so Enter / Alt+Tab-release still switches
+        /// back to it), then the next most recent, and so on. Everything else is
+        /// alphabetical by process name and title, as is the whole list when the
+        /// option is off. Recency comes from TrackForegroundWindow().
         /// </summary>
         private List<AppWindowViewModel> OrderWindows(List<AppWindowViewModel> windows)
         {
             if (!_config.RecentWindowsOnTopEnabled)
             {
                 return windows
-                    .OrderBy(MruRank)
-                    .ThenBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                    .OrderBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
                     .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
             }
@@ -459,10 +457,9 @@ namespace Switcheroo
             if (prevApp != null)
                 ordered.Add(prevApp);
 
-            var recentRest = windows
-                .Where(w => w.AppWindow.HWnd != prevAppHwnd && topSet.Contains(w.AppWindow.HWnd))
-                .OrderBy(w => w.AppWindow.ProcessTitle ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
-                .ThenBy(w => w.AppWindow.Title ?? string.Empty, StringComparer.CurrentCultureIgnoreCase);
+            var recentRest = recentHandles
+                .Where(hwnd => hwnd != prevAppHwnd && topSet.Contains(hwnd))
+                .Join(windows, hwnd => hwnd, w => w.AppWindow.HWnd, (hwnd, w) => w);
             ordered.AddRange(recentRest);
 
             var rest = windows
@@ -688,33 +685,7 @@ namespace Switcheroo
             _unfilteredWindowList = new WindowFinder().GetWindows().Select(window => new AppWindowViewModel(window)).ToList();
 
             // Order the list so it stays predictable between invocations.
-            _unfilteredWindowList = OrderWindows(_unfilteredWindowList);
-
-            var foregroundIndex = _foregroundWindow == null ? -1 : _unfilteredWindowList.FindIndex(w => AreWindowsRelated(w.AppWindow, _foregroundWindow));
-
-            var foregroundWindowMovedToBottom = false;
-            
-            // Move the foreground window to the bottom of the list (wherever the sort placed it) so the first item is the previous app
-            if (foregroundIndex >= 0)
-            {
-                _unfilteredWindowList.Add(_unfilteredWindowList[foregroundIndex]);
-                _unfilteredWindowList.RemoveAt(foregroundIndex);
-                foregroundWindowMovedToBottom = true;
-            }
-
-            // Assign shortcut keys: 0-9, then a-z, then A-Z (up to 62)
-            if (_config.AzShortcutsEnabled)
-            {
-                for (int i = 0; i < _unfilteredWindowList.Count && i < 62; i++)
-                {
-                    if (i < 10)
-                        _unfilteredWindowList[i].ShortcutKey = i.ToString();
-                    else if (i < 36)
-                        _unfilteredWindowList[i].ShortcutKey = ((char)('a' + (i - 10))).ToString();
-                    else
-                        _unfilteredWindowList[i].ShortcutKey = ((char)('A' + (i - 36))).ToString();
-                }
-            }
+            var foregroundWindowMovedToBottom = ApplyListOrdering();
 
             _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
             _windowCloser = new WindowCloser();
@@ -746,6 +717,10 @@ namespace Switcheroo
             FocusItemInList(focus, foregroundWindowMovedToBottom);
 
             SetHelpPanelExpanded(_config.OpenUsageHintsByDefault, false);
+            UpdateSortToggleText();
+            // Quick-jump keys must stay English even when an IME (e.g. pinyin) is
+            // active; the search box keeps the system's normal IME behavior.
+            InputMethod.SetIsInputMethodEnabled(lb, !_config.DisableImeOnQuickJumpEnabled);
             tb.Clear();
             CenterWindow();
             ScrollSelectedItemIntoView();
@@ -761,6 +736,80 @@ namespace Switcheroo
             UpdateTaskbarBadges();
 
             _currentWindow = new AppWindow(SystemWindow.ForegroundWindow.HWnd);
+        }
+
+        /// <summary>
+        /// Applies the configured ordering to the unfiltered list, moves the
+        /// foreground window to the bottom (so the first item is the previous app)
+        /// and assigns the 0-9 / a-z / A-Z shortcut keys by position.
+        /// Returns true when a foreground window was moved to the bottom.
+        /// </summary>
+        private bool ApplyListOrdering()
+        {
+            _unfilteredWindowList = OrderWindows(_unfilteredWindowList);
+
+            var foregroundIndex = _foregroundWindow == null ? -1 : _unfilteredWindowList.FindIndex(w => AreWindowsRelated(w.AppWindow, _foregroundWindow));
+            if (foregroundIndex >= 0)
+            {
+                _unfilteredWindowList.Add(_unfilteredWindowList[foregroundIndex]);
+                _unfilteredWindowList.RemoveAt(foregroundIndex);
+            }
+
+            if (_config.AzShortcutsEnabled)
+            {
+                for (int i = 0; i < _unfilteredWindowList.Count && i < 62; i++)
+                {
+                    if (i < 10)
+                        _unfilteredWindowList[i].ShortcutKey = i.ToString();
+                    else if (i < 36)
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('a' + (i - 10))).ToString();
+                    else
+                        _unfilteredWindowList[i].ShortcutKey = ((char)('A' + (i - 36))).ToString();
+                }
+            }
+
+            return foregroundIndex >= 0;
+        }
+
+        private void SortToggle_OnMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            _config.RecentWindowsOnTopEnabled = !_config.RecentWindowsOnTopEnabled;
+            ConfigManager.Save(_config);
+            UpdateSortToggleText();
+            ReorderCurrentList();
+            if (e != null)
+                e.Handled = true;
+        }
+
+        private void UpdateSortToggleText()
+        {
+            SortToggle.Text = _config.RecentWindowsOnTopEnabled ? "Sorted: Recent first" : "Sorted: All alphabetical";
+        }
+
+        /// <summary>
+        /// Re-applies the current ordering to the visible list (sort toggle),
+        /// re-runs the active filter and keeps the selection on the same window.
+        /// </summary>
+        private void ReorderCurrentList()
+        {
+            var selected = lb.SelectedItem as AppWindowViewModel;
+            ApplyListOrdering();
+            if (tb.IsEnabled && tb.Text.Length > 0)
+            {
+                TextChanged(tb, null);
+            }
+            else
+            {
+                _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
+                lb.DataContext = null;
+                lb.DataContext = _filteredWindowList;
+            }
+            if (selected != null)
+            {
+                var again = _filteredWindowList.FirstOrDefault(w => w.AppWindow.HWnd == selected.AppWindow.HWnd);
+                if (again != null)
+                    lb.SelectedItem = again;
+            }
         }
 
         private static bool AreWindowsRelated(SystemWindow window1, SystemWindow window2)
@@ -1078,6 +1127,136 @@ namespace Switcheroo
             state["dotSize"] = _switchHighlight.DotSize.ToString();
             state["dotOpacity"] = _switchHighlight.DotOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return state;
+        }
+
+        /// <summary>
+        /// Test hook (automation action "checkorder"): verifies list ordering with
+        /// three staged windows. Recency and the foreground window are injected
+        /// directly and the 500 ms foreground poll is paused, so the check does not
+        /// depend on real activation (the live desktop can steal foreground mid-test):
+        /// recent group in recency order, filter ties broken by recency, and the sort
+        /// toggle flipping the whole list to alphabetical and back.
+        /// </summary>
+        public List<string> RunOrderingCheckForTest()
+        {
+            if (!Switcheroo.Shell.ShellProtocol.TestMode)
+                throw new InvalidOperationException("Test mode required");
+
+            var passed = new List<string>();
+            var targets = new List<System.Diagnostics.Process>();
+            var savedRecentEnabled = _config.RecentWindowsOnTopEnabled;
+            var savedRecentCount = _config.RecentWindowsOnTopCount;
+            var savedDisableIme = _config.DisableImeOnQuickJumpEnabled;
+            _foregroundTracker.Stop();
+            try
+            {
+                _config.RecentWindowsOnTopEnabled = true;
+                _config.RecentWindowsOnTopCount = 5;
+                _config.DisableImeOnQuickJumpEnabled = true;
+
+                // Stage real windows in their own processes: AreWindowsRelated treats
+                // same-PID windows as related, so WPF windows staged inside this test
+                // core would make the foreground-to-bottom move ambiguous. notepad.exe
+                // is a store-alias stub on Win11 (the stub exits at handoff), so each
+                // window is a minimal WPF window in its own hidden powershell.exe.
+                var stagedHwnd = new Dictionary<string, IntPtr>();
+                foreach (var title in new[] { "OrderCheck Zulu", "OrderCheck Alpha", "OrderCheck Mike" })
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
+                        "-NoProfile -ExecutionPolicy Bypass -Command \"Add-Type -AssemblyName PresentationFramework; $w=New-Object System.Windows.Window; $w.Title='" + title + "'; $w.Width=320; $w.Height=200; $w.ShowActivated=$false; $w.Show(); [System.Windows.Threading.Dispatcher]::Run()\"")
+                    { CreateNoWindow = true, UseShellExecute = false };
+                    var p = System.Diagnostics.Process.Start(psi);
+                    targets.Add(p);
+                    var deadline = DateTime.UtcNow.AddSeconds(10);
+                    while (!p.HasExited && p.MainWindowHandle == IntPtr.Zero && DateTime.UtcNow < deadline)
+                    {
+                        UiChecks.Pump(50);
+                        p.Refresh();
+                    }
+                    if (p.MainWindowHandle == IntPtr.Zero)
+                        throw new InvalidOperationException("Staged window did not appear: " + title);
+                    stagedHwnd[title] = p.MainWindowHandle;
+                }
+                UiChecks.Pump(150);
+
+                Func<string, IntPtr> hwndFor = title => stagedHwnd[title];
+                RecordWindowUsed(hwndFor("OrderCheck Zulu"));
+                RecordWindowUsed(hwndFor("OrderCheck Mike"));
+                RecordWindowUsed(hwndFor("OrderCheck Alpha"));
+                _foregroundWindow = new AppWindow(hwndFor("OrderCheck Alpha"));
+
+                tb.IsEnabled = true;
+                LoadData(InitialFocus.NextItem);
+                UiChecks.Pump(50);
+                // Injected foreground Alpha -> bottom; previous app Mike -> slot 0.
+                var orderState = "foreground=" + (_foregroundWindow == null ? "none" : _foregroundWindow.Title)
+                    + " mru=" + string.Join(",", _mruWindowHandles.Take(6).Select(h =>
+                    {
+                        var vm = _unfilteredWindowList.FirstOrDefault(x => x.AppWindow.HWnd == h);
+                        return vm == null ? h.ToInt64().ToString("X") : vm.AppWindow.Title;
+                    }).ToArray())
+                    + " list=" + string.Join(" | ", _filteredWindowList.Take(6).Select(x => x.AppWindow.Title).ToArray());
+                UiChecks.Check(IndexOfTitle("OrderCheck Zulu") >= 0 && IndexOfTitle("OrderCheck Alpha") >= 0 && IndexOfTitle("OrderCheck Mike") >= 0,
+                    "Staged windows must be enumerated. " + orderState);
+                UiChecks.Check(TitleAt(0) == "OrderCheck Mike", "Previous app keeps slot 0. " + orderState);
+                UiChecks.Check(TitleAt(1) == "OrderCheck Zulu", "Recent group must follow recency, got: " + TitleAt(1));
+                UiChecks.Check(TitleAt(_filteredWindowList.Count - 1) == "OrderCheck Alpha", "Foreground window must sit at the bottom");
+                UiChecks.Check(!InputMethod.GetIsInputMethodEnabled(lb), "Quick-jump list must have the IME closed while the option is on");
+                passed.Add("Recent group in recency order, previous app first, foreground last, IME closed on the list");
+
+                tb.Text = "ordercheck";
+                UiChecks.Pump(50);
+                // Equal scores -> recency wins: Alpha (most recent, even though foreground) first.
+                UiChecks.Check(TitleAt(0) == "OrderCheck Alpha", "Filter tie-break by recency, got: " + TitleAt(0));
+                UiChecks.Check(TitleAt(1) == "OrderCheck Mike" && TitleAt(2) == "OrderCheck Zulu", "Filter tie-break order wrong");
+                passed.Add("Filter ties broken by recency");
+
+                tb.Text = string.Empty;
+                UiChecks.Pump(50);
+                SortToggle_OnMouseLeftButtonUp(null, null);
+                UiChecks.Check(!_config.RecentWindowsOnTopEnabled, "Toggle switched to alphabetical");
+                UiChecks.Check(IndexOfTitle("OrderCheck Mike") >= 0 && IndexOfTitle("OrderCheck Mike") < IndexOfTitle("OrderCheck Zulu"), "Alphabetical order wrong");
+                UiChecks.Check(TitleAt(_filteredWindowList.Count - 1) == "OrderCheck Alpha", "Foreground still at bottom in alphabetical mode");
+                passed.Add("Sort toggle switches to all alphabetical");
+
+                SortToggle_OnMouseLeftButtonUp(null, null);
+                UiChecks.Check(_config.RecentWindowsOnTopEnabled && TitleAt(0) == "OrderCheck Mike", "Toggle back to recent first");
+                passed.Add("Sort toggle switches back to recent first");
+            }
+            finally
+            {
+                if (Visibility == Visibility.Visible)
+                    HideWindow();
+                foreach (var p in targets)
+                {
+                    try
+                    {
+                        p.CloseMainWindow();
+                        if (!p.WaitForExit(1500)) p.Kill();
+                    }
+                    catch { }
+                    p.Dispose();
+                }
+                _config.RecentWindowsOnTopEnabled = savedRecentEnabled;
+                _config.RecentWindowsOnTopCount = savedRecentCount;
+                _config.DisableImeOnQuickJumpEnabled = savedDisableIme;
+                ConfigManager.Save(_config);
+                _foregroundTracker.Start();
+            }
+            return passed;
+        }
+
+        private string TitleAt(int index)
+        {
+            return _filteredWindowList[index].AppWindow.Title;
+        }
+
+        private int IndexOfTitle(string title)
+        {
+            for (var i = 0; i < _filteredWindowList.Count; i++)
+                if (_filteredWindowList[i].AppWindow.Title == title)
+                    return i;
+            return -1;
         }
 
         public void SelectIndex(int index)
@@ -1401,6 +1580,12 @@ namespace Switcheroo
             };
 
             var filterResults = new WindowFilterer().Filter(context, query).ToList();
+
+            // Equal scores: most recently used wins, so a just-switched-to window
+            // surfaces first instead of landing wherever the unfiltered list had it.
+            // (Empty query = no re-sort: keep the freshly-opened order.)
+            if (_config.RecentWindowsOnTopEnabled && query.Length > 0)
+                filterResults = filterResults.OrderByDescending(r => r.Score).ThenBy(r => MruRank(r.AppWindow)).ToList();
 
             foreach (var filterResult in filterResults)
             {

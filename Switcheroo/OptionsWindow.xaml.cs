@@ -86,6 +86,7 @@ namespace Switcheroo
             AutoSwitch.IsChecked = _config.AutoSwitch;
             AutoSwitch.IsEnabled = _config.AltTabHook;
             AzShortcutsCheckBox.IsChecked = _config.AzShortcutsEnabled;
+            DisableImeCheckBox.IsChecked = _config.DisableImeOnQuickJumpEnabled;
             TaskbarBadgesCheckBox.IsChecked = _config.TaskbarBadgesEnabled;
             BadgeTimeoutBox.Text = _config.TaskbarBadgeTimeoutSeconds.ToString();
             BadgeTimeoutBox.IsEnabled = _config.TaskbarBadgesEnabled;
@@ -166,6 +167,7 @@ namespace Switcheroo
             _config.AltTabHook = activateWithAltTab;
             _config.AutoSwitch = AutoSwitch.IsChecked.GetValueOrDefault();
             _config.AzShortcutsEnabled = AzShortcutsCheckBox.IsChecked.GetValueOrDefault();
+            _config.DisableImeOnQuickJumpEnabled = DisableImeCheckBox.IsChecked.GetValueOrDefault();
             _config.TaskbarBadgesEnabled = TaskbarBadgesCheckBox.IsChecked.GetValueOrDefault();
             int badgeTimeout;
             if (!int.TryParse(BadgeTimeoutBox.Text, out badgeTimeout))

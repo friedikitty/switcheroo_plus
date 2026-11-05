@@ -61,14 +61,24 @@ namespace Switcheroo.Core
                     }
                     return r.ResultsTitle.Any(wt => wt.Matched) && r.ResultsProcessTitle.Any(pt => pt.Matched);
                 })
-                .OrderByDescending(r => r.ResultsTitle.Sum(wt => wt.Score) + r.ResultsProcessTitle.Sum(pt => pt.Score))
+                .Select(
+                    r =>
+                        new
+                        {
+                            r.Window,
+                            r.ResultsTitle,
+                            r.ResultsProcessTitle,
+                            TotalScore = r.ResultsTitle.Sum(wt => wt.Score) + r.ResultsProcessTitle.Sum(pt => pt.Score)
+                        })
+                .OrderByDescending(r => r.TotalScore)
                 .Select(
                     r =>
                         new FilterResult<T>
                         {
                             AppWindow = r.Window,
                             WindowTitleMatchResults = r.ResultsTitle,
-                            ProcessTitleMatchResults = r.ResultsProcessTitle
+                            ProcessTitleMatchResults = r.ResultsProcessTitle,
+                            Score = r.TotalScore
                         });
         }
 

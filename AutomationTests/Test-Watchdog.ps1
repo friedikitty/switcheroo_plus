@@ -19,7 +19,7 @@ function Request([string]$Name,[string]$Action,[string]$Kind='') {
         $writer.AutoFlush=$true
         $writer.WriteLine((@{action=$Action;kind=$Kind}|ConvertTo-Json -Compress))
         $read=$reader.ReadLineAsync()
-        if(-not $read.Wait($(if($Action -eq 'checkui') { 20000 } else { 2000 }))) { throw 'IPC response timeout' }
+        if(-not $read.Wait($(if($Action -eq 'checkui' -or $Action -eq 'checkorder') { 20000 } else { 2000 }))) { throw 'IPC response timeout' }
         return ($read.Result|ConvertFrom-Json)
     } finally { $client.Dispose() }
 }
@@ -61,6 +61,8 @@ try {
             $dotChecks=Request $corePipe 'checkui' ([string]$monitor)
             Assert (-not $dotChecks.error -and $dotChecks.checks.ok) ('Monitor '+$monitor+' feedback: '+($dotChecks|ConvertTo-Json -Depth 5 -Compress))
         }
+        $orderChecks=Request $corePipe 'checkorder'
+        Assert (-not $orderChecks.error -and $orderChecks.checks) ('Ordering checks: '+($orderChecks|ConvertTo-Json -Depth 5 -Compress))
     }
     foreach($kind in @('managed','background','native','failfast')) {
         try { Request $corePipe 'fault' $kind|Out-Null } catch { }

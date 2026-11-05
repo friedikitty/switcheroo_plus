@@ -31,6 +31,10 @@
                                 <TextBlock TextWrapping="Wrap" Text="Show 0-9 / a-z / A-Z shortcuts in the overlay" />
                             </CheckBox>
                             <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Press a displayed key to switch directly. Hold Shift for uppercase keys.</TextBlock>
+                            <CheckBox Name="DisableImeCheckBox" Margin="0,5,0,4">
+                                <TextBlock TextWrapping="Wrap" Text="Force English for quick-jump keys" />
+                            </CheckBox>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Disable the input method while the list has focus so letters always jump. The search box still allows pinyin for Chinese titles.</TextBlock>
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Header="Behavior" Padding="10" Margin="0,0,0,12">
@@ -50,7 +54,7 @@
                                 <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Pinned recent windows:" TextWrapping="Wrap" />
                                 <TextBox Name="RecentOnTopCountBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" Grid.Column="1" />
                             </Grid>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">The previous app stays first; other pinned windows are alphabetical.</TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">The previous app stays first; the rest follow in recency order. Switch to plain alphabetical below the search box.</TextBlock>
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>

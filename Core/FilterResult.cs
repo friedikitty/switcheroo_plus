@@ -28,5 +28,6 @@ namespace Switcheroo.Core
         public T AppWindow { get; set; }
         public IList<MatchResult> WindowTitleMatchResults { get; set; }
         public IList<MatchResult> ProcessTitleMatchResults { get; set; }
+        public int Score { get; set; }
     }
 }

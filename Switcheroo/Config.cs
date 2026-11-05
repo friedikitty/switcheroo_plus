@@ -60,12 +60,16 @@ namespace Switcheroo
         public bool MultiColumnEnabled { get; set; } = true;
 
         // Pinned-recent list ordering: previous app stays first, the rest of the
-        // top group is alphabetical so the visible order stays stable.
+        // top group follows in recency order.
         public bool RecentWindowsOnTopEnabled { get; set; } = true;
         public int RecentWindowsOnTopCount { get; set; } = 5;
 
         // 0-9 / a-z / A-Z overlay shortcuts
         public bool AzShortcutsEnabled { get; set; } = true;
+
+        // Close the IME while the list has focus so quick-jump keys stay English;
+        // the search box keeps the normal IME behavior (e.g. pinyin for Chinese titles)
+        public bool DisableImeOnQuickJumpEnabled { get; set; } = true;
 
         // Draw the quick-switch key at the top-left of each window's taskbar button
         public bool TaskbarBadgesEnabled { get; set; } = true;
@@ -323,12 +327,16 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"MultiColumnEnabled\": {0},", Bool(cfg.MultiColumnEnabled)));
             sb.AppendLine();
             sb.AppendLine("  // Pin the most recently used windows at the top of the list");
-            sb.AppendLine("  // (previous app stays first, the rest of the group is alphabetical)");
+            sb.AppendLine("  // (previous app stays first, the rest of the group in recency order)");
             sb.AppendLine(string.Format("  \"RecentWindowsOnTopEnabled\": {0},", Bool(cfg.RecentWindowsOnTopEnabled)));
             sb.AppendLine(string.Format("  \"RecentWindowsOnTopCount\": {0},", cfg.RecentWindowsOnTopCount));
             sb.AppendLine();
             sb.AppendLine("  // Show 0-9 / a-z / A-Z shortcuts in the overlay");
             sb.AppendLine(string.Format("  \"AzShortcutsEnabled\": {0},", Bool(cfg.AzShortcutsEnabled)));
+            sb.AppendLine();
+            sb.AppendLine("  // Force English for quick-jump keys: close the IME while the list has focus");
+            sb.AppendLine("  // (the search box keeps normal IME behavior, e.g. pinyin for Chinese titles)");
+            sb.AppendLine(string.Format("  \"DisableImeOnQuickJumpEnabled\": {0},", Bool(cfg.DisableImeOnQuickJumpEnabled)));
             sb.AppendLine();
             sb.AppendLine("  // Draw the quick-switch key at the top-left of each window's taskbar button");
             sb.AppendLine(string.Format("  \"TaskbarBadgesEnabled\": {0},", Bool(cfg.TaskbarBadgesEnabled)));

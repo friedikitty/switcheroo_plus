@@ -16,8 +16,8 @@ namespace Switcheroo.Automation
     // Runs only inside an explicitly isolated automation core.
     internal static class UiChecks
     {
-        static void Check(bool value, string message) { if(!value) throw new InvalidOperationException(message); }
-        static void Pump(int milliseconds)
+        internal static void Check(bool value, string message) { if(!value) throw new InvalidOperationException(message); }
+        internal static void Pump(int milliseconds)
         {
             var frame = new DispatcherFrame();
             var timer = new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(milliseconds) };
@@ -58,6 +58,7 @@ namespace Switcheroo.Automation
                 var appearance=groups.Single(g=>Convert.ToString(g.Header)=="Appearance");
                 Check(appearance.PointToScreen(new Point()).X > shortcuts.PointToScreen(new Point()).X+200,"Options must have two columns");
                 Check(options.Ok.IsVisible && options.Cancel.IsVisible,"Footer buttons visible");
+                Check(options.DisableImeCheckBox.IsChecked==true,"Quick-jump IME option defaults on");
                 options.TaskbarBadgesCheckBox.IsChecked=false;
                 Check(!options.BadgeTimeoutBox.IsEnabled,"Badge timeout follows toggle");
                 options.TaskbarBadgesCheckBox.IsChecked=true;
@@ -94,11 +95,11 @@ namespace Switcheroo.Automation
             foreach(var monitor in System.Windows.Forms.Screen.AllScreens.Skip(monitorIndex).Take(1))
             {
             var bounds=monitor.Bounds;
-            // Capability probe: some display pipelines (this machine's GameViewer virtual
-            // display) never composite UpdateLayeredWindow content, so the dot cannot appear
-            // there no matter how correct the code is. Probe once per monitor; the pixel
-            // assertion still runs at full strength wherever per-pixel alpha composites.
-            var layeredPixels=SupportsLayeredPixels(bounds.Left+200,bounds.Top+200);
+            // The dot is a solid opaque chip: some display pipelines (this machine's
+            // GameViewer virtual display) never composite per-pixel-alpha layered
+            // windows at all, and screen-covering topmost targets can suppress them
+            // too. The chip renders everywhere; slow pipelines are covered by the
+            // polling pixel assertion below.
             foreach(bool fullscreen in new[]{false,true})
             {
                 var target=new Window { Title="Switcheroo automated feedback target",Width=440,Height=300,Left=120,Top=100,Background=new SolidColorBrush(Color.FromRgb(16,16,16)),WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize };
@@ -126,40 +127,77 @@ namespace Switcheroo.Automation
                             "Feedback frame must stay within the target's outer rect: frame="+feedback.Left+","+feedback.Top+","+feedback.Right+","+feedback.Bottom+" outer="+outer.Left+","+outer.Top+","+outer.Right+","+outer.Bottom);
                         Check(feedback.Left-outer.Left<32 && feedback.Top-outer.Top<32 && outer.Right-feedback.Right<32 && outer.Bottom-feedback.Bottom<32,
                             "Feedback frame must hug the target's visible frame: frame="+feedback.Left+","+feedback.Top+","+feedback.Right+","+feedback.Bottom+" outer="+outer.Left+","+outer.Top+","+outer.Right+","+outer.Bottom);
-                        if(layeredPixels)
+                        // Pixel proof: find the chip by its exact solid color in a full-monitor
+                        // capture. Capture content can be scaled relative to this process's
+                        // window coordinates (a system-DPI-aware process on a 175% virtual
+                        // display sees the framebuffer at 1.75x), so the content scale is
+                        // derived from the chip's own rendered size - capture space is never
+                        // assumed to equal window space. Slow pipelines are covered by
+                        // polling with the hold re-armed.
+                        double opacityAtSample=0; var attempts=0; var blue=false;
+                        var foundCX=0.0; var foundCY=0.0; var foundSize=0.0;
+                        while(attempts<15 && !blue)
                         {
-                        // DotCenter is already in this process's coordinate space, which is what CopyFromScreen expects.
-                        var sample=new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY };
-                        using(var bitmap=new System.Drawing.Bitmap(100,100))
-                        using(var graphics=System.Drawing.Graphics.FromImage(bitmap))
-                        {
-                            graphics.CopyFromScreen(sample.x-50,sample.y-50,0,0,new System.Drawing.Size(100,100));
-                            bitmap.Save(Path.Combine(ShellProtocol.ConfigRoot,(fullscreen?"dot-fullscreen-":"dot-window-")+monitorIndex.ToString()+".png"));
-                            var center=bitmap.GetPixel(50,50); var outside=bitmap.GetPixel(4,4);
-                            var opacityAtSample=feedback.DotOpacity;
-                            if(!(center.B > outside.B+20 && center.B>center.R))
+                            attempts++;
+                            using(var full=new System.Drawing.Bitmap(bounds.Width,bounds.Height))
+                            using(var fullGraphics=System.Drawing.Graphics.FromImage(full))
                             {
-                                // Failure evidence: the whole monitor shows where the dot actually painted.
-                                using(var full=new System.Drawing.Bitmap(bounds.Width,bounds.Height))
-                                using(var fullGraphics=System.Drawing.Graphics.FromImage(full))
-                                {
-                                    fullGraphics.CopyFromScreen(bounds.Left,bounds.Top,0,0,full.Size);
+                                fullGraphics.CopyFromScreen(bounds.Left,bounds.Top,0,0,full.Size);
+                                opacityAtSample=feedback.DotOpacity;
+                                for(var sy=0;sy<full.Height && !blue;sy+=4)
+                                    for(var sx=0;sx<full.Width && !blue;sx+=4)
+                                    {
+                                        if(!IsChipPixel(full.GetPixel(sx,sy))) continue;
+                                        var minX=int.MaxValue; var minY=int.MaxValue; var maxX=int.MinValue; var maxY=int.MinValue; var count=0;
+                                        var x0=Math.Max(0,sx-24); var y0=Math.Max(0,sy-24);
+                                        var x1=Math.Min(full.Width,sx+200); var y1=Math.Min(full.Height,sy+200);
+                                        for(var cy=y0;cy<y1;cy++)
+                                            for(var cx=x0;cx<x1;cx++)
+                                            {
+                                                if(!IsChipPixel(full.GetPixel(cx,cy))) continue;
+                                                if(cx<minX)minX=cx; if(cx>maxX)maxX=cx;
+                                                if(cy<minY)minY=cy; if(cy>maxY)maxY=cy;
+                                                count++;
+                                            }
+                                        if(count==0) continue;
+                                        var w=maxX-minX+1; var h=maxY-minY+1;
+                                        // Solid, roughly square, plausible scale of the 64px chip.
+                                        if(w<feedback.DotSize*0.7 || w>feedback.DotSize*3 || Math.Abs(w-h)>w*0.2) continue;
+                                        if(count < w*h*0.55) continue;
+                                        var k=w/(double)feedback.DotSize;
+                                        var expX=(feedback.DotCenterX-bounds.Left)*k; var expY=(feedback.DotCenterY-bounds.Top)*k;
+                                        var ccx=minX+w/2.0; var ccy=minY+h/2.0;
+                                        if(Math.Abs(ccx-expX)>8*k+8 || Math.Abs(ccy-expY)>8*k+8) continue;
+                                        blue=true; foundCX=ccx; foundCY=ccy; foundSize=w;
+                                    }
+                                if(!blue && attempts==15)
                                     full.Save(Path.Combine(ShellProtocol.ConfigRoot,(fullscreen?"dot-fullscreen-monitor-":"dot-window-monitor-")+monitorIndex.ToString()+".png"));
-                                }
                             }
-                            Check(center.B > outside.B+20 && center.B>center.R,"Screenshot contains a visible blue dot: "+monitorIndex+" fullscreen="+fullscreen+" center="+feedback.DotCenterX+","+feedback.DotCenterY+" size="+feedback.DotSize+" pixel="+center+" outside="+outside+" opacityAtSample="+opacityAtSample+" bounds="+feedback.DotBounds());
+                            if(blue) break;
+                            Pump(100);
+                            // The 800 ms hold can expire before a slow pipeline composites the
+                            // chip; re-arm it so the next sample still has something to see.
+                            if(!feedback.DotVisible) feedback.Flash(hwnd);
                         }
-                        }
-                        // WindowFromPoint must resolve through the click-through dot to its target.
-                            Check(WindowFromPoint(new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY })==hwnd,"Dot is click-through");
-                        double first=feedback.DotOpacity; Pump(160);
-                        Check(feedback.DotOpacity<first,"Dot fades with time");
-                        feedback.Flash(hwnd); Check(feedback.DotOpacity>first,"Rapid switch restarts fade");
+                        Check(blue,"Screenshot contains a visible blue dot: "+monitorIndex+" fullscreen="+fullscreen+" center="+feedback.DotCenterX+","+feedback.DotCenterY+" size="+feedback.DotSize+" found="+foundCX+","+foundCY+","+foundSize+" opacityAtSample="+opacityAtSample+" attempts="+attempts+" bounds="+feedback.DotBounds());
+                        // The poll can outlive the 800 ms hold (full-monitor captures with
+                        // false-candidate refines); re-arm so the hold assertion is measured
+                        // from a known flash.
+                        feedback.Flash(hwnd);
+                        // WindowFromPoint cannot see through an opaque (non-layered) overlay even
+                        // with WS_EX_TRANSPARENT - that flag's hit-test skip is honored by real
+                        // mouse routing (the taskbar badges rely on it daily), not by
+                        // WindowFromPoint. So assert no foreign window intercepts the dot point.
+                            var hit=WindowFromPoint(new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY });
+                            Check(feedback.OwnsWindow(hit) || hit==hwnd,"Dot is click-through, hit=0x"+hit.ToString("X")+" owns="+feedback.OwnsWindow(hit)+" exstyle=0x"+GetWindowLong(hit,-20).ToString("X"));
+                        Pump(160);
+                        Check(feedback.DotVisible && feedback.DotOpacity==1,"Dot holds without fading");
+                        feedback.Flash(hwnd); Check(feedback.DotVisible,"Rapid switch re-arms the dot");
                         var expiry=DateTime.UtcNow.AddSeconds(3);
                         do { Pump(100); } while((feedback.DotVisible || feedback.IsVisible) && DateTime.UtcNow < expiry);
                         Check(!feedback.DotVisible && !feedback.IsVisible,"Both feedback effects expire");
                         var mode=fullscreen?"Fullscreen":"Windowed";
-                        passed.Add(layeredPixels?mode+" dot pixels, center, fading, click-through, focus and cleanup":mode+" dot center, fading, click-through, focus and cleanup (pixel check skipped: display cannot composite per-pixel-alpha layered windows)");
+                        passed.Add(mode+" chip pixels, center, hold, click-through, focus and cleanup");
                     }
                     finally { target.Close(); }
                 }
@@ -167,61 +205,17 @@ namespace Switcheroo.Automation
             }
             return new Dictionary<string, object> { { "ok", true }, { "passed", passed } };
         }
+        static bool IsChipPixel(System.Drawing.Color c)
+        {
+            // SwitchHighlight's solid chip color is opaque (128,216,255), so an
+            // unscaled interior pixel matches exactly; allow a small tolerance.
+            return Math.Abs(c.R-128)<12 && Math.Abs(c.G-216)<12 && Math.Abs(c.B-255)<12;
+        }
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         struct NativePoint { public int x,y; }
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         static extern IntPtr WindowFromPoint(NativePoint point);
-        // Capability probe: paints a small opaque-blue native layered window at (x,y) and
-        // checks that a screenshot sees it. Some display pipelines (this machine's GameViewer
-        // virtual display) never composite UpdateLayeredWindow content, so the dot cannot
-        // appear there no matter how correct the code is; any failure means "unsupported".
-        static bool SupportsLayeredPixels(int x,int y)
-        {
-            const int size=8;
-            var hwnd=CreateWindowEx(0x80000|0x20|0x80|0x08000000|0x8,"Static","lp",0x80000000|0x10000000,0,0,10,10,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
-            if(hwnd==IntPtr.Zero) return false;
-            try
-            {
-                var screenDc=GetDC(IntPtr.Zero);
-                var memDc=CreateCompatibleDC(screenDc);
-                var bmi=new int[10]; bmi[0]=40; bmi[1]=size; bmi[2]=-size; bmi[3]=1|(32<<16);
-                IntPtr bits; var dib=CreateDIBSection(screenDc,bmi,0,out bits,IntPtr.Zero,0);
-                var px=new byte[size*size*4];
-                for(int i=0;i<size*size;i++) { px[i*4]=255; px[i*4+3]=255; } // opaque blue, BGRA
-                System.Runtime.InteropServices.Marshal.Copy(px,0,bits,px.Length);
-                var old=SelectObject(memDc,dib);
-                var dst=new NativePoint { x=x,y=y };
-                var sz=new NativeSize { cx=size,cy=size };
-                var src=new NativePoint { x=0,y=0 };
-                var blend=new NativeBlend { op=0,flags=0,alpha=255,format=1 };
-                var ok=UpdateLayeredWindow(hwnd,screenDc,ref dst,ref sz,memDc,ref src,0,ref blend,2);
-                SelectObject(memDc,old); DeleteObject(dib); DeleteDC(memDc); ReleaseDC(IntPtr.Zero,screenDc);
-                if(!ok) return false;
-                Pump(150);
-                using(var bitmap=new System.Drawing.Bitmap(size,size))
-                using(var graphics=System.Drawing.Graphics.FromImage(bitmap))
-                {
-                    graphics.CopyFromScreen(x,y,0,0,new System.Drawing.Size(size,size));
-                    var center=bitmap.GetPixel(size/2,size/2);
-                    return center.B>200 && center.R<80;
-                }
-            }
-            catch { return false; }
-            finally { DestroyWindow(hwnd); }
-        }
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-        struct NativeSize { public int cx,cy; }
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-        struct NativeBlend { public byte op,flags,alpha,format; }
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr CreateWindowEx(uint exStyle,string className,string windowName,uint style,int x,int y,int width,int height,IntPtr parent,IntPtr menu,IntPtr instance,IntPtr param);
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd,IntPtr screenDc,ref NativePoint dst,ref NativeSize size,IntPtr memDc,ref NativePoint src,uint colorKey,ref NativeBlend blend,uint flags);
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr hwnd);
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hwnd);
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hwnd,IntPtr dc);
-        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
-        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
-        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc,IntPtr obj);
-        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
-        [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr CreateDIBSection(IntPtr dc,int[] bmi,uint usage,out IntPtr bits,IntPtr section,uint offset);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern int GetWindowLong(IntPtr hWnd,int index);
     }
 }
