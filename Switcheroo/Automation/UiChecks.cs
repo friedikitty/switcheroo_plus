@@ -106,21 +106,40 @@ namespace Switcheroo.Automation
                         WinApi.SetWindowPos(hwnd,new IntPtr(-1),bounds.Left+(fullscreen?0:80),bounds.Top+(fullscreen?0:80),fullscreen?bounds.Width:440,fullscreen?bounds.Height:300,WinApi.SWP_NOACTIVATE);
                         WinApi.ForceSwitchToWindow(hwnd); Pump(80);
                         feedback.PreWarm(); Pump(100);
-                        
+
                         feedback.Flash(hwnd);
                         Check(feedback.DotVisible,"Dot visible after switch");
                         Pump(60);
                         Check(Math.Abs(feedback.DotCenterX-(feedback.Left+feedback.Right)/2)<=1 && Math.Abs(feedback.DotCenterY-(feedback.Top+feedback.Bottom)/2)<=1,"Dot centered on target bounds");
                         Check(!feedback.OwnsWindow(WinApi.GetForegroundWindow()),"Feedback must not steal focus");
+                        // Geometry proof that the frame tracks the target in this process's coordinate
+                        // space (this is what SetWindowPos/CopyFromScreen use). Works even when a
+                        // display is not capturable; tolerance is far below any DPI-scale mismatch.
+                        WinApi.RECT outer; WinApi.GetWindowRect(hwnd,out outer);
+                        Check(feedback.Left>=outer.Left-2 && feedback.Top>=outer.Top-2 && feedback.Right<=outer.Right+2 && feedback.Bottom<=outer.Bottom+2,
+                            "Feedback frame must stay within the target's outer rect: frame="+feedback.Left+","+feedback.Top+","+feedback.Right+","+feedback.Bottom+" outer="+outer.Left+","+outer.Top+","+outer.Right+","+outer.Bottom);
+                        Check(feedback.Left-outer.Left<32 && feedback.Top-outer.Top<32 && outer.Right-feedback.Right<32 && outer.Bottom-feedback.Bottom<32,
+                            "Feedback frame must hug the target's visible frame: frame="+feedback.Left+","+feedback.Top+","+feedback.Right+","+feedback.Bottom+" outer="+outer.Left+","+outer.Top+","+outer.Right+","+outer.Bottom);
+                        // DotCenter is already in this process's coordinate space, which is what CopyFromScreen expects.
                         var sample=new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY };
-                        PhysicalToLogicalPointForPerMonitorDPI(hwnd,ref sample);
                         using(var bitmap=new System.Drawing.Bitmap(100,100))
                         using(var graphics=System.Drawing.Graphics.FromImage(bitmap))
                         {
                             graphics.CopyFromScreen(sample.x-50,sample.y-50,0,0,new System.Drawing.Size(100,100));
                             bitmap.Save(Path.Combine(ShellProtocol.ConfigRoot,(fullscreen?"dot-fullscreen-":"dot-window-")+monitorIndex.ToString()+".png"));
                             var center=bitmap.GetPixel(50,50); var outside=bitmap.GetPixel(4,4);
-                            Check(center.B > outside.B+20 && center.B>center.R,"Screenshot contains a visible blue dot: "+monitorIndex+" fullscreen="+fullscreen+" center="+feedback.DotCenterX+","+feedback.DotCenterY+" size="+feedback.DotSize+" pixel="+center+" outside="+outside+" elapsedOpacity="+feedback.DotOpacity+" bounds="+feedback.DotBounds());
+                            var opacityAtSample=feedback.DotOpacity;
+                            if(!(center.B > outside.B+20 && center.B>center.R))
+                            {
+                                // Failure evidence: the whole monitor shows where the dot actually painted.
+                                using(var full=new System.Drawing.Bitmap(bounds.Width,bounds.Height))
+                                using(var fullGraphics=System.Drawing.Graphics.FromImage(full))
+                                {
+                                    fullGraphics.CopyFromScreen(bounds.Left,bounds.Top,0,0,full.Size);
+                                    full.Save(Path.Combine(ShellProtocol.ConfigRoot,(fullscreen?"dot-fullscreen-monitor-":"dot-window-monitor-")+monitorIndex.ToString()+".png"));
+                                }
+                            }
+                            Check(center.B > outside.B+20 && center.B>center.R,"Screenshot contains a visible blue dot: "+monitorIndex+" fullscreen="+fullscreen+" center="+feedback.DotCenterX+","+feedback.DotCenterY+" size="+feedback.DotSize+" pixel="+center+" outside="+outside+" opacityAtSample="+opacityAtSample+" bounds="+feedback.DotBounds());
                         }
                         // WindowFromPoint must resolve through the click-through dot to its target.
                             Check(WindowFromPoint(new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY })==hwnd,"Dot is click-through");
@@ -139,8 +158,6 @@ namespace Switcheroo.Automation
         }
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         struct NativePoint { public int x,y; }
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        static extern bool PhysicalToLogicalPointForPerMonitorDPI(IntPtr window,ref NativePoint point);
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         static extern IntPtr WindowFromPoint(NativePoint point);
     }

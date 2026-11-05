@@ -16,14 +16,20 @@ namespace Switcheroo
     ///
     /// Four thin opaque, click-through, topmost windows form the frame. Opaque
     /// non-layered windows are the only overlay form verified to render reliably
-    /// on this machine (see the taskbar badges); positions are set in physical
-    /// pixels with SetWindowPos, so mixed-DPI setups do not need DIP conversion.
-    /// The windows are created once, parked off-screen, and re-positioned per
-    /// flash - creating or re-showing a WPF window costs tens of milliseconds.
+    /// on this machine (see the taskbar badges). The windows are created once,
+    /// parked off-screen, and re-positioned per flash - creating or re-showing a
+    /// WPF window costs tens of milliseconds.
+    ///
+    /// This process is DPI-unaware, so SetWindowPos, WPF and GetWindowRect all
+    /// speak the virtualized logical coordinate space, while DWM reports frame
+    /// bounds in physical pixels. The DWM frame is converted into the process
+    /// space before use (identity on same-scale setups); mixing the two spaces
+    /// put the pulse ~1.5x off target on mixed-DPI monitors.
     ///
     /// The pulse is 3 px for 160 ms, 2 px for 80 ms, 1 px for 80 ms, then parked.
     /// A timer always parks the frame, so a target that disappears mid-pulse
-    /// cannot leave a border behind.
+    /// cannot leave a border behind. A soft light-blue dot fades out over 600 ms
+    /// at the window's center.
     /// </summary>
     public class SwitchHighlight : IDisposable
     {
@@ -31,6 +37,7 @@ namespace Switcheroo
         private const int OffScreen = -30000;
         private const int HoldFirstStepMs = 160;
         private const int HoldStepMs = 80;
+        private const int DotDiameter = 48;
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x20;
         private const int WS_EX_TOOLWINDOW = 0x80;
@@ -97,17 +104,15 @@ namespace Switcheroo
             if (!IntersectsVirtualScreen(frame))
                 return;
 
-            EnsureWindows();
-
             Target = hwnd;
             Left = frame.Left;
             Top = frame.Top;
             Right = frame.Right;
             Bottom = frame.Bottom;
 
-            ShowDot();
             _step = 0;
             ApplyThickness(MaxThickness);
+            ShowDot();
             _visible = true;
 
             if (_pulse == null)
@@ -120,21 +125,20 @@ namespace Switcheroo
             _pulse.Start();
         }
 
-        internal bool OwnsWindow(IntPtr handle) { return handle==dotHandle || Array.IndexOf(_handles,handle)>=0; }
+        internal bool OwnsWindow(IntPtr handle) { return handle == dotHandle || Array.IndexOf(_handles, handle) >= 0; }
         internal string DotBounds()
         {
-            WinApi.RECT r; WinApi.GetWindowRect(dotHandle,out r);
-            return r.Left+","+r.Top+","+r.Right+","+r.Bottom+" wpf="+dot.Left+","+dot.Top+","+dot.Width+","+dot.Height;
+            WinApi.RECT r; WinApi.GetWindowRect(dotHandle, out r);
+            return r.Left + "," + r.Top + "," + r.Right + "," + r.Bottom + " wpf=" + dot.Left + "," + dot.Top + "," + dot.Width + "," + dot.Height;
         }
         private void ShowDot()
         {
             DotCenterX = Left + (Right - Left) / 2;
             DotCenterY = Top + (Bottom - Top) / 2;
-            var source = PresentationSource.FromVisual(dot);
-            double scale = source == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
-            try { uint dpi = GetDpiForWindow(Target); if (dpi != 0) scale = dpi / 96.0; }
-            catch (EntryPointNotFoundException) { }
-            DotSize = (int)Math.Round(48 * scale);
+            // A constant logical size is right on every monitor: in this
+            // DPI-unaware process 48 logical px are composed as 48 DIP worth of
+            // physical pixels whatever the target display's scale is.
+            DotSize = DotDiameter;
             // Reassert topmost after fullscreen activation without taking focus.
             WinApi.SetWindowPos(dotHandle, new IntPtr(-1), DotCenterX - DotSize / 2, DotCenterY - DotSize / 2,
                 DotSize, DotSize, WinApi.SWP_NOACTIVATE);
@@ -207,7 +211,7 @@ namespace Switcheroo
                     WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
                     AllowsTransparency = true, Background = Brushes.Transparent,
                     Topmost = true, ShowInTaskbar = false, ShowActivated = false, IsHitTestVisible = false,
-                    Left = OffScreen, Top = OffScreen, Width = 48, Height = 48,
+                    Left = OffScreen, Top = OffScreen, Width = DotDiameter, Height = DotDiameter,
                     Content = new Ellipse
                     {
                         Fill = new RadialGradientBrush(new GradientStopCollection
@@ -267,12 +271,27 @@ namespace Switcheroo
 
         private bool TryGetFrame(IntPtr hwnd, out WinApi.RECT frame)
         {
-            // The visible frame, not the invisible resize border classic windows have
+            // The visible frame, not the invisible resize border classic windows have.
+            // DWM reports physical pixels; convert both corners into this process's
+            // virtualized space before any SetWindowPos/WPF use. The anchor must be
+            // one of our own windows - the target may live in a process with a
+            // different DPI awareness, which would define a different logical space.
             if (WinApi.DwmGetWindowAttribute(hwnd, WinApi.DWMWA_EXTENDED_FRAME_BOUNDS,
                     out frame, Marshal.SizeOf(typeof(WinApi.RECT))) == 0 &&
                 frame.Right > frame.Left && frame.Bottom > frame.Top)
             {
-                return true;
+                var anchor = _handles[0] != IntPtr.Zero ? _handles[0] : dotHandle;
+                var topLeft = new NativePoint { x = frame.Left, y = frame.Top };
+                var bottomRight = new NativePoint { x = frame.Right, y = frame.Bottom };
+                if (anchor != IntPtr.Zero &&
+                    PhysicalToLogicalPointForPerMonitorDPI(anchor, ref topLeft) &&
+                    PhysicalToLogicalPointForPerMonitorDPI(anchor, ref bottomRight))
+                {
+                    frame.Left = topLeft.x; frame.Top = topLeft.y;
+                    frame.Right = bottomRight.x; frame.Bottom = bottomRight.y;
+                    return true;
+                }
+                // Conversion unavailable: GetWindowRect already speaks our space.
             }
             return WinApi.GetWindowRect(hwnd, out frame);
         }
@@ -299,8 +318,11 @@ namespace Switcheroo
             CurrentThickness = 0;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativePoint { public int x, y; }
+
         [DllImport("user32.dll")]
-        private static extern uint GetDpiForWindow(IntPtr hwnd);
+        private static extern bool PhysicalToLogicalPointForPerMonitorDPI(IntPtr hwnd, ref NativePoint point);
 
         [DllImport("user32.dll")]
         private static extern int GetWindowLong(IntPtr hWnd, int index);
