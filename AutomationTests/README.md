@@ -31,7 +31,12 @@ watchdog PID, whose process job owns the core and badge helper. Live settings an
 existing running instances are not changed.
 
 Interactive-desktop tests are skipped explicitly in CI or when no input desktop
-is available. UAC consent remains an explicit manual check; tests never bypass it.
+is available. Desktop pixel checks additionally need displays that are awake and
+a capture-visible desktop: GDI capture returns black on monitors whose scanout is
+idle (powered off, asleep, unswitched KVM), and streaming/remote-play tools that
+virtualize the desktop make captures show wallpaper only. Frame placement is also
+asserted geometrically against the target's window rect, which needs no pixels.
+UAC consent remains an explicit manual check; tests never bypass it.
 Fullscreen tests use borderless WPF windows; exclusive fullscreen games, secure
 desktops and protected graphics surfaces still need hardware-specific checks.
 Dumps stay local and are excluded from CI artifact uploads; they can be large and

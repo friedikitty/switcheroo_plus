@@ -58,6 +58,8 @@ Distribution: GitHub Releases, Chocolatey (`choco install switcheroo`), portable
 - **`Switcheroo/`** — WPF application shell, overlay window, options/about dialogs, hotkey registration, settings persistence.
 - **`ManagedWinapi/`** — Third-party Win32 wrapper (`SystemWindow`, `SystemAccessibleObject`, etc.).
 - **`Core.UnitTests/`** — Matcher and highlighter unit tests.
+- **`Watchdog/`** — WinForms supervisor shell (`switcheroo_plus_watchdog.exe`): hidden tray launcher, starts/stops/restarts the core inside a job object, captures crash/hang dumps.
+- **`Shared/`** — `ShellProtocol.cs`: session/test-scoped named pipes and config-root resolution, linked into both core and watchdog.
 
 ---
 
@@ -69,6 +71,9 @@ Distribution: GitHub Releases, Chocolatey (`choco install switcheroo`), portable
 | `Core/` | Domain logic: `AppWindow`, `WindowFinder`, `WindowFilterer`, matchers, `WinApi` |
 | `ManagedWinapi/` | External dependency: Win32 window / accessibility wrappers |
 | `Core.UnitTests/` | NUnit tests for matchers and `XamlHighlighter` |
+| `Watchdog/` | Supervisor shell: tray app, control window, debug-event loop, dump capture |
+| `Shared/` | `ShellProtocol.cs` pipe/config plumbing linked into core and watchdog |
+| `AutomationTests/` | Acceptance runner + watchdog/startup/desktop suites (see its README) |
 | `Installer/` | Inno Setup script (`Installer.iss`) and MSBuild packaging (`Build.xml`) |
 | `ChocolateyPackages/` | `nuspec` + install scripts for `switcheroo`, `switcheroo.install`, `switcheroo.portable` |
 
@@ -145,6 +150,12 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - Window activation goes through `WinApi.ForceSwitchToWindow` (`AttachThreadInput` workaround); plain `SwitchToThisWindow` is denied by the foreground lock when another app received the most recent input. When there is no foreground window at all (disconnected session) the attach is impossible, so it falls back to `SetWindowPos(HWND_TOP)` to at least raise the window.
 - The previous-app hook (`PreviousAppHook`) fires synchronously inside the `WH_KEYBOARD_LL` callback; the switch must be deferred with `Dispatcher.BeginInvoke` because `SetForegroundWindow` is denied while the intercepted keystroke is still being processed.
 
+### Watchdog shell
+- `switcheroo_plus_watchdog.exe` is the normal launcher (installer/startup shortcuts target it; starting `switcheroo_plus.exe` directly forwards to it, falling back to a direct core run if the watchdog exe is missing). Hidden by default; owns the tray icon. Right-click opens the control window (state/PID, Start/Stop/Restart, diagnostics folder, scrolling logs); closing it hides it. Start never launches a second healthy core.
+- The supervisor starts the core with `CreateProcess(DEBUG_ONLY_THIS_PROCESS|CREATE_SUSPENDED)` inside a kill-on-close job (the badge helper inherits it; killing the shell cleans up both), then debug-loops: second-chance exceptions and CLR FailFast exit events trigger an out-of-process `MiniDumpWriteDump` worker (`--write-dump` mode, 35 s self-kill), and ~10 s without a healthy ping captures one hang dump per episode. Recovery is manual/report-and-ask - no automatic restart loop.
+- Incidents live in `%USERPROFILE%\.config\.switcheroo_plus\crashes\<timestamp-pid-guid>\` (`core.dmp`, `report.json`, `recent.log`), latest five kept; `watchdog.log` rotates at 5 MB with three backups. If the faulting thread's context cannot be read, a contextless full dump is written instead of skipping the dump. Full dumps contain process memory: keep local, never auto-upload.
+- Test mode `--test-mode --test-root <dir> --test-id <guid>` isolates pipes/mutex/config, enables fault injection (`fault`, `test-dump-failure`, `test-dump-timeout`, startup crash/hang env flags) and gives the shell a five-minute self-deadline.
+
 ### Taskbar badges (quick-switch key overlay)
 - When `AzShortcutsEnabled` and `TaskbarBadgesEnabled` (both default on), each window's shortcut key is drawn at the top-left of its taskbar button. Rendering lives in a **separate helper process** (`BadgeOverlay/` -> `switcheroo_plus_badges.exe`, copied next to the main exe at build time) so badge/taskbar bugs can never crash the switcher. `Switcheroo/TaskbarBadgeOverlay.cs` is a thin **named-pipe client** (pipe `switcheroo_plus_badges`): it sends (key, title) pairs, the helper does everything else. The helper is also warmed ~2 s after the main app starts (cache-only scan, `DispatcherTimer` in `MainWindow`), is reused across shows, respawns automatically if killed, and exits when the main app exits (`Application.Exit` handler in `MainWindow`).
 - Client calls are fire-and-forget (connect + write + close; only the `getbadges` test hook reads a response, with a bounded wait) and go through one **FIFO queue drained by a single background thread** - thread-pool callbacks racing for a lock do not preserve show/hide order. Nothing in the client may block the UI thread: `Close()` sends `exit` on a bounded helper thread, never spawns a helper and drops anything still queued, and a helper that dies mid-conversation can never hang the app.
@@ -158,10 +169,11 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - Packaging: `Installer/Build.xml` builds `BadgeOverlay` before the app in both targets, so the setup and portable zip pick up `switcheroo_plus_badges.exe` from the app bin folder (`*.exe` wildcard). The helper's own post-build copy is skipped when `SolutionDir` is empty (direct csproj build).
 
 ### Switch highlight (feedback after switching)
-- `SwitchHighlight` (`Switcheroo/SwitchHighlight.cs`) briefly frames the window that just became active: four thin opaque, click-through, topmost edge windows (`WS_EX_TRANSPARENT|TOOLWINDOW|NOACTIVATE`), shown at 3 px for 160 ms, then 2 px and 1 px for 80 ms each, then parked off-screen. Every switch path (overlay Enter, digit/letter shortcuts, Alt+Tab release, previous-app hotkey) ends in `ActivateAppWindow()`, so one call there covers all of them.
-- It deliberately reuses the badge technique: opaque non-layered windows parked at `-30000`, positioned in physical pixels with `SetWindowPos` (no DIP conversion), and **no `SWP_NOREDRAW`** - parked-then-moved windows stay unpainted with it. `FlashWindowEx` was rejected (it flashes caption/taskbar like an attention request), as was a single transparent overlay.
-- Rectangle comes from `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)` (fallback `GetWindowRect`); the target HWND is the foreground window right after the switch, falling back to the list entry when the foreground is zero or our own overlay. The four windows are created once and pre-warmed at `DispatcherPriority.Background` so the first switch does not pay window creation; `Quit()` disposes them.
-- Option: `SwitchHighlightEnabled` (default on) with the "Flash the window you switch to" checkbox. Test hook: automation action `getswitchhighlight` returns `visible/target/left/top/right/bottom/thickness`.
+- `SwitchHighlight` (`Switcheroo/SwitchHighlight.cs`) briefly frames the window that just became active: four thin opaque, click-through, topmost edge windows (`WS_EX_TRANSPARENT|TOOLWINDOW|NOACTIVATE`), shown at 3 px for 160 ms, then 2 px and 1 px for 80 ms each, then parked off-screen. A soft light-blue dot (one small `AllowsTransparency` window with a radial-gradient ellipse, constant 48 logical px) fades out over 600 ms at the window center. Every switch path (overlay Enter, digit/letter shortcuts, Alt+Tab release, previous-app hotkey) ends in `ActivateAppWindow()`, so one call there covers all of them.
+- **Coordinate spaces on mixed-DPI setups:** this process is DPI-unaware, so `SetWindowPos`, WPF, `GetWindowRect`, WinForms `Screen` and `CopyFromScreen` all use the virtualized logical space, while `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)` returns **physical** pixels. The DWM frame is converted with `PhysicalToLogicalPointForPerMonitorDPI` anchored on one of our own feedback windows (never the target - a foreign process may have a different awareness context); the `GetWindowRect` fallback needs no conversion. Feeding physical pixels straight into SetWindowPos placed the pulse ~1.5x off target on the 150% monitor.
+- The border reuses the badge technique: opaque non-layered windows parked at `-30000`, positioned with `SetWindowPos`, and **no `SWP_NOREDRAW`** - parked-then-moved windows stay unpainted with it. `FlashWindowEx` was rejected (it flashes caption/taskbar like an attention request), as was a single transparent overlay.
+- The target HWND is the foreground window right after the switch, falling back to the list entry when the foreground is zero or our own overlay. The five windows are created once and pre-warmed at `DispatcherPriority.Background` so the first switch does not pay window creation; `Dispose()` closes them.
+- Option: `SwitchHighlightEnabled` (default on) with the "Highlight the window you switch to" checkbox. Test hooks: automation action `getswitchhighlight` (border state) and the `checkui` per-monitor loop (dot pixels, frame geometry, fade, click-through, focus, expiry).
 
 ### Error Handling
 
@@ -193,6 +205,11 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 | `BadgeOverlay/Program.cs` | Badge helper process (`switcheroo_plus_badges.exe`): pipe server, UIA taskbar lookup, chip windows, timeout, X close chip |
 | `Core/Matchers/*.cs` | Four scoring matchers and `XamlHighlighter` |
 | `Switcheroo/PortableSettingsProvider.cs` | Custom `SettingsProvider` for portable XML persistence |
+| `Watchdog/Program.cs` | Watchdog entry: hidden tray shell, control window, test CLI, dump-worker mode |
+| `Watchdog/Supervisor.cs` | Lifecycle state machine, debug-event loop, hang/dump capture, log rotation |
+| `Watchdog/Native.cs` | P/Invoke: debug `CreateProcess`, job object, `MiniDumpWriteDump` worker |
+| `Shared/ShellProtocol.cs` | Pipe naming/ACLs, JSON protocol, test-mode config root |
+| `AutomationTests/Run-All.ps1` | One acceptance entry point: build, NUnit, watchdog/startup/desktop suites |
 | `Installer/Installer.iss` | Inno Setup installer script |
 | `Installer/Build.xml` | MSBuild targets for setup + portable packaging |
 | `.github/workflows/build.yml` | CI: restore, build Debug, run NUnit tests on push/PR to master |
@@ -246,3 +263,4 @@ Return: `MatchResult` with `StringPart` segments (matched/unmatched).
 - **Coverage gaps:** No tests for `AppWindow`, `WindowFinder`, `WindowFilterer`, `WinApi`, `KeyboardHelper`, `WindowIconFinder`, `SignificantCharactersMatcher`.
 - **Patterns:** No mocking framework; each test directly instantiates the SUT. No `[SetUp]`/`[TearDown]`; flat namespace `Switcheroo.Core.UnitTests`.
 - **Running:** Build `Core.UnitTests.csproj` then run with NUnit console runner or a VS test adapter that supports NUnit 2.x.
+- **Acceptance suite:** `AutomationTests\Run-All.ps1` (`-SkipBuild`, `-SkipDesktop` switches) runs build, NUnit, `Test-Watchdog.ps1` (lifecycle, four real crash modes with dump-stream/CDB validation, hangs, retention, log rotation, per-monitor feedback checks) and `Test-Startup.ps1` (startup crash/hang, missing core, blocked diagnostics). Desktop pixel checks need awake, capture-visible displays - see `AutomationTests/README.md`.
