@@ -224,7 +224,10 @@ namespace Switcheroo.Watchdog
                                     crashed=true; crashPending=true;
                                     var record=new byte[IntPtr.Size==8?152:80];
                                     Marshal.Copy(IntPtr.Add(ev,union),record,0,record.Length);
-                                    try { Capture("crash",tid,exception,record,Native.Context(tid)); }
+                                    byte[] context=null;
+                                    try { context=Native.Context(tid); }
+                                    catch(Exception e) { Log("Exception context unavailable: "+e.Message); }
+                                    try { Capture("crash",tid,exception,record,context); }
                                     catch(Exception e) { Log("Crash capture failed: "+e.Message); }
                                 }
                             }
@@ -251,11 +254,6 @@ namespace Switcheroo.Watchdog
                     if(finished) break;
                 }
                 Log("Core exited: 0x"+exitCode.ToString("X8"));
-                if(!intentional && !crashed)
-                {
-                    Log("Unexpected termination; no live exception context remains for a crash dump");
-                    WriteTermination(exitCode);
-                }
                 SetState(intentional?"Stopped":"Crashed");
                 if(!intentional) Notify("Core stopped unexpectedly. Open the control window to restart.");
             }
@@ -273,15 +271,6 @@ namespace Switcheroo.Watchdog
             }
         }
         void Notify(string text) { var handler=Incident; if(handler!=null) handler(text); }
-        void WriteTermination(uint code)
-        {
-            try
-            {
-                var dir=NewIncident();
-                File.WriteAllText(Path.Combine(dir,"report.json"),ShellProtocol.Encode(new { kind="termination",pid=core.Id,exitCode=code,dumpStatus="unavailable: process terminated without an exception event",utc=DateTime.UtcNow }));
-            }
-            catch(Exception e) { Log("Incident report failed: "+e.Message); }
-        }
         string NewIncident()
         {
             string dir=Path.Combine(root,"crashes",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff")+"-"+core.Id+"-"+Guid.NewGuid().ToString("N").Substring(0,8));
@@ -308,7 +297,10 @@ namespace Switcheroo.Watchdog
                 dir=NewIncident();
                 string temp=Path.Combine(dir,"core.dmp.partial"), final=Path.Combine(dir,"core.dmp");
                 var request=new Dictionary<string,object> { {"pid",core.Id},{"dump",temp},{"thread",thread} };
-                if(record!=null) { request["record"]=Convert.ToBase64String(record); request["context"]=Convert.ToBase64String(context); }
+                // MiniDumpWriteDump needs both halves of EXCEPTION_POINTERS; when the thread
+                // context could not be captured, drop the record too and write a contextless
+                // full dump (same shape as the FailFast path) rather than no dump at all.
+                if(record!=null && context!=null) { request["record"]=Convert.ToBase64String(record); request["context"]=Convert.ToBase64String(context); }
                 string mode=testCaptureMode; testCaptureMode=null;
                 if(ShellProtocol.TestMode && mode=="test-dump-timeout") request["delayMs"]=3000;
                 if(ShellProtocol.TestMode && mode=="test-dump-failure") Directory.CreateDirectory(temp);

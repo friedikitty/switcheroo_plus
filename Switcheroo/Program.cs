@@ -37,8 +37,15 @@ namespace Switcheroo
             if (Array.IndexOf(args, "--supervised") < 0)
             {
                 var launcher = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "switcheroo_plus_watchdog.exe");
+                try
+                {
                 Process.Start(new ProcessStartInfo(launcher, string.Join(" ", Array.ConvertAll(args, a => "\"" + a.Replace("\"", "\\\"") + "\""))) { UseShellExecute = false });
-                return;
+                    return;
+                }
+                catch (Exception)
+                {
+                    // Watchdog missing or not startable: run the core directly.
+                }
             }
             if (Switcheroo.Shell.ShellProtocol.TestMode && Environment.GetEnvironmentVariable("SWITCHEROO_TEST_STARTUP_CRASH") == "1")
                 Environment.FailFast("Injected startup crash");

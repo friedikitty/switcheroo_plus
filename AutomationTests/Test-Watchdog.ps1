@@ -139,7 +139,8 @@ try {
         $deadline=[DateTime]::UtcNow.AddSeconds(4)
         while((Get-Item -LiteralPath (Join-Path $root 'watchdog.log')).Length -ge 5*1024*1024 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
     }
-    Assert (@(Get-ChildItem -LiteralPath $root -Filter 'watchdog.log.*').Count -eq 3) 'log rotation retains three backups'
+    # Win32 wildcard quirk: 'watchdog.log.*' also matches 'watchdog.log' itself.
+    Assert (@(Get-ChildItem -LiteralPath $root -Filter 'watchdog.log.*' | Where-Object {$_.Name -ne 'watchdog.log'}).Count -eq 3) 'log rotation retains three backups'
     $ownedCore=Get-Process -Id (State).pid
     $watchdog.Kill(); $watchdog.WaitForExit(3000)|Out-Null
     try { Assert ($ownedCore.WaitForExit(10000)) 'watchdog termination cleans up owned core' } finally { $ownedCore.Dispose() }
