@@ -94,7 +94,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="46" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Dot opacity (percent):" TextWrapping="Wrap" />
+                                <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Dot brightness (percent):" TextWrapping="Wrap" />
                                 <TextBox Name="DotOpacityBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" Grid.Column="1" />
                             </Grid>
                             <CheckBox Name="OpenUsageHintsByDefaultCheckBox" Margin="0,5,0,4">

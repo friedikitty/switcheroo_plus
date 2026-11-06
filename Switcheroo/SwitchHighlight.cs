@@ -31,9 +31,12 @@ namespace Switcheroo
     /// put the pulse ~1.5x off target on mixed-DPI monitors.
     ///
     /// The pulse is 3 px for 160 ms, 2 px for 80 ms, 1 px for 80 ms, then parked.
-    /// The dot holds for 800 ms at the window's center at DotOpacityPercent, then
-    /// fades out over DotFadeMs (0 = parks instantly). Timers always park every
-    /// window, so a target that disappears mid-pulse cannot leave artifacts behind.
+    /// The dot holds for 800 ms at the window's center, then shrinks from 64 px
+    /// to nothing over DotFadeMs (0 = parks instantly): uniform window alpha does
+    /// not blend on this display pipeline (it composites as a black box), so the
+    /// fade animates size and DotOpacityPercent dims the chip color instead of
+    /// its transparency. Timers always park every window, so a target that
+    /// disappears mid-pulse cannot leave artifacts behind.
     /// </summary>
     public class SwitchHighlight : IDisposable
     {
@@ -58,9 +61,9 @@ namespace Switcheroo
         private DispatcherTimer dotFade;
         private readonly System.Diagnostics.Stopwatch dotClock = new System.Diagnostics.Stopwatch();
 
-        /// <summary>Milliseconds the dot fades out after its 800 ms hold; 0 = park instantly.</summary>
+        /// <summary>Milliseconds the dot shrinks away after its 800 ms hold; 0 = park instantly.</summary>
         public int DotFadeMs { get; set; }
-        /// <summary>Dot opacity in percent (20-100) during the hold.</summary>
+        /// <summary>Dot brightness in percent (20-100); alpha cannot blend here, so it dims the color.</summary>
         public int DotOpacityPercent { get; set; }
 
         public SwitchHighlight()
@@ -178,7 +181,7 @@ namespace Switcheroo
                 DotSize, DotSize, WinApi.SWP_NOACTIVATE);
             dotClock.Restart();
             if (dotFade != null) dotFade.Stop();
-            dot.Opacity = DotOpacity;
+            dot.Background = new SolidColorBrush(DotColor());
             if (dotHold == null)
             {
                 dotHold = new DispatcherTimer();
@@ -202,7 +205,16 @@ namespace Switcheroo
                         ParkDot();
                         return;
                     }
-                    dot.Opacity = DotOpacity;
+                    // Shrink-fade: alpha does not composite on this pipeline, so
+                    // the fade animates the chip's size instead. The frame edges
+                    // already prove per-flash SetWindowPos resizes render fine;
+                    // SWP_NOREDRAW stays banned (parked-then-moved windows come
+                    // back unpainted with it).
+                    var p = (dotClock.ElapsedMilliseconds - DotHoldMs) / (double)DotFadeMs;
+                    var size = Math.Max(1, (int)Math.Round(DotDiameter * (1.0 - p)));
+                    DotSize = size;
+                    WinApi.SetWindowPos(dotHandle, IntPtr.Zero, DotCenterX - size / 2, DotCenterY - size / 2,
+                        size, size, WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
                 };
             }
             dotHold.Stop();
@@ -217,6 +229,18 @@ namespace Switcheroo
             if (dotHandle != IntPtr.Zero)
                 WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
                     WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE | WinApi.SWP_NOSIZE);
+        }
+
+        // Alpha does not blend on this display pipeline, so the opacity option
+        // dims the chip color toward dark gray instead of making it transparent.
+        private Color DotColor()
+        {
+            var t = Math.Max(20, Math.Min(100, DotOpacityPercent)) / 100.0;
+            const int floor = 40;
+            return Color.FromRgb(
+                (byte)(floor + (128 - floor) * t),
+                (byte)(floor + (216 - floor) * t),
+                (byte)(floor + (255 - floor) * t));
         }
 
         private void Advance()

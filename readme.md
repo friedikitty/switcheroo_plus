@@ -75,7 +75,7 @@ Features
   (0 = never).
 - **Switch feedback.** The window you switch to is framed with a blue border
   pulse and a solid blue center dot — no more "where did I land?". The dot
-  lingers, then fades out; both the fade-out time and the dot opacity are
+  lingers, then shrinks away; both the shrink time and the dot brightness are
   configurable in _Options_.
 - **Previous-app hotkey and Alt+Tab hook.** Flip between two apps without the
   overlay, or let Switcheroo replace the built-in Alt+Tab, with optional
