@@ -172,6 +172,16 @@ namespace Switcheroo.Automation
 
                 case "options":
                     _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.OpenOptionsForShell)); response["ok"] = true; break;
+                case "optionspassive":
+                    {
+                        if (!Switcheroo.Shell.ShellProtocol.TestMode) { response["error"] = "Test mode required"; break; }
+                        int px = 0, py = 0;
+                        if (request.ContainsKey("x")) int.TryParse(Convert.ToString(request["x"]), out px);
+                        if (request.ContainsKey("y")) int.TryParse(Convert.ToString(request["y"]), out py);
+                        _mainWindow.Dispatcher.Invoke(new Action(() => _mainWindow.OpenOptionsPassiveForTest(px, py)));
+                        response["ok"] = true;
+                    }
+                    break;
                 case "about":
                     _mainWindow.Dispatcher.BeginInvoke(new Action(_mainWindow.OpenAboutForShell)); response["ok"] = true; break;
                 case "startup":
@@ -186,6 +196,16 @@ namespace Switcheroo.Automation
                 case "show":
                     _mainWindow.ShowAndActivate();
                     response["ok"] = true;
+                    break;
+                case "showpassive":
+                    {
+                        if (!Switcheroo.Shell.ShellProtocol.TestMode) { response["error"] = "Test mode required"; break; }
+                        int sx = 0, sy = 0;
+                        if (request.ContainsKey("x")) int.TryParse(Convert.ToString(request["x"]), out sx);
+                        if (request.ContainsKey("y")) int.TryParse(Convert.ToString(request["y"]), out sy);
+                        _mainWindow.ShowPassiveForTest(sx, sy);
+                        response["ok"] = true;
+                    }
                     break;
 
                 case "hide":
@@ -210,6 +230,23 @@ namespace Switcheroo.Automation
 
                 case "getswitchhighlight":
                     response["highlight"] = _mainWindow.GetSwitchHighlightState();
+                    break;
+                case "flashhwnd":
+                    {
+                        if (!Switcheroo.Shell.ShellProtocol.TestMode) { response["error"] = "Test mode required"; break; }
+                        string raw = request.ContainsKey("hwnd") ? Convert.ToString(request["hwnd"]) : "";
+                        if (raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                            raw = raw.Substring(2);
+                        long hv;
+                        if (!long.TryParse(raw.Trim(), System.Globalization.NumberStyles.HexNumber,
+                                System.Globalization.CultureInfo.InvariantCulture, out hv))
+                        {
+                            response["error"] = "hwnd must be hex";
+                            break;
+                        }
+                        _mainWindow.FlashHighlightForTest(new IntPtr(hv));
+                        response["ok"] = true;
+                    }
                     break;
 
                 case "checkorder":

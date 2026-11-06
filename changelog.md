@@ -1,5 +1,61 @@
 Change log
 ----------
+### 2026-11-06: current master (after v0.11.4) ###
+- Switch feedback: soft 48 px radial-gradient center dot with per-pixel alpha and a fade-out over `SwitchHighlightDotFadeMs`; frame edges re-assert topmost.
+- Recent windows pinned in recency order, plus a `Recent` / `A–Z` toggle.
+- Force-English quick-jump keys: the IME cannot swallow `0-9` / `a-z` / `A-Z` while the result list has focus.
+- Test-only `flashhwnd`, `showpassive` and `optionspassive` hooks; `checkui` captures only the staged target and never steals focus.
+- README screenshots staged with real apps and harmless demo content.
+
+### 2026-11-05: after v0.11.4 ###
+- Switch feedback: blue frame pulse and center dot; mixed-DPI frame conversion.
+- Watchdog: contextless dump fallback and log-rotation fix.
+- Recent-on-top pinned ordering, sort toggle and force-English quick-jump.
+- Per-monitor layered-pixel probe for the feedback dot.
+
+### 2026-11-04: after v0.11.4 ###
+- Switch feedback border pulse on every switch path.
+- Hidden watchdog shell: tray control, start/stop/restart, crash and hang dumps, incident retention, log rotation.
+- Isolated acceptance suite and new automation-pipe actions.
+
+### 2026-11-04: v0.11.4 ###
+- CI installs the NUnit console runner before running tests.
+
+### 2026-11-04: v0.11.3 ###
+- CI runs the NUnit step under cmd.
+
+### 2026-11-04: v0.11.2 ###
+- Docs point at the real exe name and installer output path.
+
+### 2026-11-03: v0.11.1 ###
+- Badge cache and helper review fixes.
+
+### 2026-11-02: v0.11.0 ###
+- Badge rendering isolated into `switcheroo_plus_badges.exe`.
+- Badge auto-hide timeout (default 10 s, 0 = never).
+- PID-based process lookup removes the 1-2 s popup delay.
+
+### 2026-10-30: v0.10.0 ###
+- Recent-on-top ordering, taskbar shortcut badges and hotkey conflict probe.
+- Badges drawn as small opaque click-through chips (transparent overlays did not render).
+- Alt+Tab hook swallows the key instantly; low-priority `build.ps1`; raise the target when no foreground window exists.
+
+### 2026-05-18 .. 2026-07-27: pre-v0.10.0 fork groundwork ###
+- .NET Framework 4.8, NUnit 3 and tooling modernization.
+- JSONC config at `~/.config/.switcheroo_plus` with legacy migration.
+- Configurable activation and previous-app hotkeys; `0-9` / `a-z` / `A-Z` jump keys; previous-app toggle.
+- Overlay UX: list focus, `/` search, menu button, tray double-click, resizable popup, multi-column layout, case-sensitive jump keys up to 62.
+- CapsLock+Tab hook, AutoStart fix, `switcheroo_plus.exe` rename and build scripts.
+- Named-pipe automation API and `--auto` test mode.
+- Hotkey validation/persistence fixes and reliable switch-back/MRU ordering.
+- Upstream 2018 features: Alt+Tab auto-switch, RunAsAdmin, multi-select, UWP process names, Alt+X close and Alt+J/K navigation.
+
+### 2015-08-18: v0.9.2 ###
+- Chocolatey packages updated to 0.9.2.
+
+### 2015-06-16: v0.9.1 ###
+- Null pointer check before disposing the window closer (#46).
+
 ### 2015-04-28: v0.9.0 ###
 - Much improved window closing: Switcheroo now stays open, so you can close several windows faster. Thanks to @HellBrick for proposing this idea and sending a pull request! :+1: (#25)
 - The focused window is now at the bottom of the list. This makes it faster to switch to the next window as you just need to press Alt+Enter, Enter. No more need to press Arrow Down. This makes Alt+Enter and Alt+Tab work in the same way (#24)

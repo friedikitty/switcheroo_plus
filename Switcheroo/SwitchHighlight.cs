@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Switcheroo.Core;
 
@@ -12,17 +14,16 @@ namespace Switcheroo
     /// Draws a short accent border pulse around the window the user just
     /// switched to, so it is obvious where the switch landed.
     ///
-    /// Five opaque, click-through, topmost windows form the feedback: four thin
-    /// edges for the frame plus a solid dot at the window's center. Opaque
-    /// non-layered windows are the only overlay form verified to render reliably
-    /// on every display of the target machine (same technique as the taskbar
-    /// badges): per-pixel-alpha layered windows never composite on some display
-    /// pipelines (GameViewer-style virtual displays) and are suppressed over
-    /// screen-covering topmost windows, and probing them proved time-varying, so
-    /// the pretty gradient dot was replaced by this solid chip. The windows are
-    /// created once, parked off-screen, and re-positioned per flash - creating
-    /// or re-showing a WPF window costs tens of milliseconds, and parking never
-    /// resizes (a resized-then-moved window can come back unpainted).
+    /// Five click-through, topmost windows form the feedback: four thin opaque
+    /// edges for the frame plus one transparent, per-pixel-alpha window holding
+    /// a soft light-blue dot at the center. The dot is a radial-gradient ellipse
+    /// whose outer stop is fully transparent, so it blends into whatever is
+    /// behind it instead of looking like a square chip; the ellipse's own opacity
+    /// fades the dot out over DotFadeMs. Animating the ellipse (rather than
+    /// Window.Opacity on an opaque window) keeps the fade inside the layered
+    /// window's per-pixel alpha, which is what composites as a soft dot. The
+    /// windows are created once, parked off-screen, and re-positioned per flash -
+    /// creating or re-showing a WPF window costs tens of milliseconds.
     ///
     /// This process is DPI-unaware, so SetWindowPos, WPF and GetWindowRect all
     /// speak the virtualized logical coordinate space, while DWM reports frame
@@ -31,12 +32,9 @@ namespace Switcheroo
     /// put the pulse ~1.5x off target on mixed-DPI monitors.
     ///
     /// The pulse is 3 px for 160 ms, 2 px for 80 ms, 1 px for 80 ms, then parked.
-    /// The dot holds for 800 ms at the window's center, then shrinks from 64 px
-    /// to nothing over DotFadeMs (0 = parks instantly): uniform window alpha does
-    /// not blend on this display pipeline (it composites as a black box), so the
-    /// fade animates size and DotOpacityPercent dims the chip color instead of
-    /// its transparency. Timers always park every window, so a target that
-    /// disappears mid-pulse cannot leave artifacts behind.
+    /// The dot holds for 800 ms at the window's center, then fades out over
+    /// DotFadeMs (0 = parks instantly). Timers always park every window, so a
+    /// target that disappears mid-pulse cannot leave artifacts behind.
     /// </summary>
     public class SwitchHighlight : IDisposable
     {
@@ -44,7 +42,7 @@ namespace Switcheroo
         private const int OffScreen = -30000;
         private const int HoldFirstStepMs = 160;
         private const int HoldStepMs = 80;
-        private const int DotDiameter = 64;
+        private const int DotDiameter = 48;
         private const int DotHoldMs = 800;
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x20;
@@ -56,14 +54,15 @@ namespace Switcheroo
         private readonly Window[] _edges = new Window[4];
         private readonly IntPtr[] _handles = new IntPtr[4];
         private Window dot;
+        private Ellipse dotShape;
         private IntPtr dotHandle;
         private DispatcherTimer dotHold;
         private DispatcherTimer dotFade;
         private readonly System.Diagnostics.Stopwatch dotClock = new System.Diagnostics.Stopwatch();
 
-        /// <summary>Milliseconds the dot shrinks away after its 800 ms hold; 0 = park instantly.</summary>
+        /// <summary>Milliseconds the dot fades out after its 800 ms hold; 0 = park instantly.</summary>
         public int DotFadeMs { get; set; }
-        /// <summary>Dot brightness in percent (20-100); alpha cannot blend here, so it dims the color.</summary>
+        /// <summary>Dot opacity in percent (20-100) during the hold; the fade targets zero.</summary>
         public int DotOpacityPercent { get; set; }
 
         public SwitchHighlight()
@@ -76,19 +75,12 @@ namespace Switcheroo
         {
             get { return dotClock.IsRunning && dotClock.ElapsedMilliseconds < DotHoldMs + Math.Max(0, DotFadeMs); }
         }
+
         public double DotOpacity
         {
-            get
-            {
-                if (!DotVisible)
-                    return 0;
-                var baseOpacity = Math.Max(20, Math.Min(100, DotOpacityPercent)) / 100.0;
-                var fadeElapsed = dotClock.ElapsedMilliseconds - DotHoldMs;
-                if (fadeElapsed <= 0 || DotFadeMs <= 0)
-                    return baseOpacity;
-                return Math.Max(0, baseOpacity * (1.0 - fadeElapsed / (double)DotFadeMs));
-            }
+            get { return DotVisible && dotShape != null ? dotShape.Opacity : 0; }
         }
+
         public int DotCenterX { get; private set; }
         public int DotCenterY { get; private set; }
         public int DotSize { get; private set; }
@@ -112,6 +104,11 @@ namespace Switcheroo
 
         /// <summary>Thickness of the pulse right now (0 = parked).</summary>
         public int CurrentThickness { get; private set; }
+
+        private double BaseOpacity
+        {
+            get { return Math.Max(20, Math.Min(100, DotOpacityPercent)) / 100.0; }
+        }
 
         /// <summary>
         /// Creates the five overlay windows early, at a moment the UI can afford
@@ -168,55 +165,62 @@ namespace Switcheroo
             WinApi.RECT r; WinApi.GetWindowRect(dotHandle, out r);
             return r.Left + "," + r.Top + "," + r.Right + "," + r.Bottom + " wpf=" + dot.Left + "," + dot.Top + "," + dot.Width + "," + dot.Height;
         }
+
         private void ShowDot()
         {
             DotCenterX = Left + (Right - Left) / 2;
             DotCenterY = Top + (Bottom - Top) / 2;
             // A constant logical size is right on every monitor: in this
-            // DPI-unaware process the logical size is composed as the same DIP
-            // worth of physical pixels whatever the target display's scale is.
+            // DPI-unaware process 48 logical px are composed as 48 DIP worth of
+            // physical pixels whatever the target display's scale is.
             DotSize = DotDiameter;
             // Reassert topmost after fullscreen activation without taking focus.
             WinApi.SetWindowPos(dotHandle, new IntPtr(-1), DotCenterX - DotSize / 2, DotCenterY - DotSize / 2,
                 DotSize, DotSize, WinApi.SWP_NOACTIVATE);
             dotClock.Restart();
+
             if (dotFade != null) dotFade.Stop();
-            dot.Background = new SolidColorBrush(DotColor());
+            if (dotShape != null)
+            {
+                dotShape.BeginAnimation(UIElement.OpacityProperty, null);
+                dotShape.Opacity = BaseOpacity;
+            }
+
             if (dotHold == null)
             {
                 dotHold = new DispatcherTimer();
                 dotHold.Tick += (sender, args) =>
                 {
                     dotHold.Stop();
-                    // Still visible => the hold ended but the fade remains.
-                    if (DotVisible && dotFade != null)
+                    if (DotVisible && DotFadeMs > 0 && dotShape != null)
                     {
+                        // Fade the ellipse inside the transparent window. The
+                        // window itself stays opaque to the compositor (opacity
+                        // 1), so the animation modifies the dot's per-pixel alpha
+                        // instead of turning the whole layered window black.
+                        var fade = new DoubleAnimation(BaseOpacity, 0,
+                            TimeSpan.FromMilliseconds(DotFadeMs));
+                        fade.Completed += (s, e) => { if (!DotVisible) ParkDot(); };
+                        dotShape.BeginAnimation(UIElement.OpacityProperty, fade);
                         dotFade.Start();
                         return;
                     }
                     ParkDot();
                 };
+
                 dotFade = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
                 dotFade.Tick += (sender, args) =>
                 {
+                    // The animation parks the dot when it completes; this timer
+                    // is the safety net for a display/dispatcher stall.
                     if (!DotVisible)
                     {
                         dotFade.Stop();
                         ParkDot();
-                        return;
                     }
-                    // Shrink-fade: alpha does not composite on this pipeline, so
-                    // the fade animates the chip's size instead. The frame edges
-                    // already prove per-flash SetWindowPos resizes render fine;
-                    // SWP_NOREDRAW stays banned (parked-then-moved windows come
-                    // back unpainted with it).
-                    var p = (dotClock.ElapsedMilliseconds - DotHoldMs) / (double)DotFadeMs;
-                    var size = Math.Max(1, (int)Math.Round(DotDiameter * (1.0 - p)));
-                    DotSize = size;
-                    WinApi.SetWindowPos(dotHandle, IntPtr.Zero, DotCenterX - size / 2, DotCenterY - size / 2,
-                        size, size, WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
                 };
             }
+
             dotHold.Stop();
             dotHold.Interval = TimeSpan.FromMilliseconds(DotHoldMs);
             dotHold.Start();
@@ -226,21 +230,11 @@ namespace Switcheroo
         {
             if (dotHold != null) dotHold.Stop();
             if (dotFade != null) dotFade.Stop();
+            if (dotShape != null)
+                dotShape.BeginAnimation(UIElement.OpacityProperty, null);
             if (dotHandle != IntPtr.Zero)
                 WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
                     WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE | WinApi.SWP_NOSIZE);
-        }
-
-        // Alpha does not blend on this display pipeline, so the opacity option
-        // dims the chip color toward dark gray instead of making it transparent.
-        private Color DotColor()
-        {
-            var t = Math.Max(20, Math.Min(100, DotOpacityPercent)) / 100.0;
-            const int floor = 40;
-            return Color.FromRgb(
-                (byte)(floor + (128 - floor) * t),
-                (byte)(floor + (216 - floor) * t),
-                (byte)(floor + (255 - floor) * t));
         }
 
         private void Advance()
@@ -279,8 +273,11 @@ namespace Switcheroo
         {
             if (width <= 0 || height <= 0)
                 return;
-            WinApi.SetWindowPos(_handles[index], IntPtr.Zero, x, y, width, height,
-                WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
+            // HWND_TOPMOST on every step: a target that is itself topmost can
+            // otherwise sit above the frame created earlier (the dot already
+            // reasserts topmost in ShowDot). The edges are click-through.
+            WinApi.SetWindowPos(_handles[index], new IntPtr(-1), x, y, width, height,
+                WinApi.SWP_NOACTIVATE);
         }
 
         private void Park()
@@ -297,20 +294,29 @@ namespace Switcheroo
         {
             if (dot == null)
             {
+                dotShape = new Ellipse
+                {
+                    Fill = new RadialGradientBrush(new GradientStopCollection
+                    {
+                        new GradientStop(Color.FromArgb(230, 128, 216, 255), 0),
+                        new GradientStop(Color.FromArgb(160, 128, 216, 255), 0.35),
+                        new GradientStop(Color.FromArgb(0, 128, 216, 255), 1)
+                    })
+                };
                 dot = new Window
                 {
                     WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
-                    AllowsTransparency = false,
-                    Background = new SolidColorBrush(Color.FromRgb(128, 216, 255)),
+                    AllowsTransparency = true, Background = Brushes.Transparent,
                     Topmost = true, ShowInTaskbar = false, ShowActivated = false, IsHitTestVisible = false,
-                    Left = OffScreen, Top = OffScreen, Width = DotDiameter, Height = DotDiameter
+                    Left = OffScreen, Top = OffScreen, Width = DotDiameter, Height = DotDiameter,
+                    Content = dotShape
                 };
                 dotHandle = new WindowInteropHelper(dot).EnsureHandle();
                 SetWindowLong(dotHandle, GWL_EXSTYLE, GetWindowLong(dotHandle, GWL_EXSTYLE) |
                     WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
                 dot.Show();
-                // Park by position only: a 1x1 resize would leave the window
-                // unpainted when moved back into place (same war story as the badges).
+                // Park by position only: resizing a WPF window back into place
+                // can leave it unpainted (same war story as the badges).
                 WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
                     WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE | WinApi.SWP_NOSIZE);
             }
@@ -388,7 +394,7 @@ namespace Switcheroo
             dotClock.Stop();
             if (dotHold != null) { dotHold.Stop(); dotHold = null; }
             if (dotFade != null) { dotFade.Stop(); dotFade = null; }
-            if (dot != null) { dot.Close(); dot = null; dotHandle = IntPtr.Zero; }
+            if (dot != null) { dot.Close(); dot = null; dotHandle = IntPtr.Zero; dotShape = null; }
             if (_pulse != null)
             {
                 _pulse.Stop();

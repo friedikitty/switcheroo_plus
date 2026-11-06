@@ -1,181 +1,257 @@
-<img src="logo.png" alt="Switcheroo" width="48px" height="48px"> Switcheroo Plus ![GPL License](https://img.shields.io/badge/license-GPL-brightgreen.svg)
-==========
+# Switcheroo Plus
 
-Switcheroo Plus is for anyone who spends more time using a keyboard than a mouse.
-Instead of alt-tabbing through a (long) list of open windows, Switcheroo lets
-you jump straight to the window you want: search by title, press the displayed
-shortcut character, or flip back to the previous app with a dedicated hotkey.
+[English](readme.md)
 
-It is a fork of [Switcheroo](https://github.com/kvakulo/Switcheroo) that adds
-quick-jump shortcut keys, taskbar key badges, recent-windows-on-top ordering,
-input-method handling for quick jumps, switch feedback highlighting and a
-crash watchdog.
+> Repository: https://github.com/friedikitty/switcheroo_plus
+> Download: [GitHub Releases](https://github.com/friedikitty/switcheroo_plus/releases)
+> What it does: a window switcher for Windows. Press `Alt + Space`, type a few letters from a title, jump to that window.
+
+## TLDR
+
+- Keyboard-first: skip the long `Alt + Tab` list. Search titles or press the key printed on a result.
+- Fork of [Switcheroo](https://github.com/kvakulo/Switcheroo).
+- Adds quick-jump keys, taskbar badges drawn by a separate helper, recent-first order, IME handling, switch feedback and a crash watchdog.
+- Windows only. The runtime needs `.NET Framework 4.8`; building needs MSBuild and the targeting pack.
+- Installer and portable zip live on Releases. The Chocolatey `switcheroo` package is the original, not this fork.
+- Crash dumps contain process memory and window titles. They stay local; check them before sharing.
 
 ## Screenshots
 
-The search overlay with per-window quick-jump keys (staged demo windows):
+- Real apps with harmless demo content. The `0-9` / `a-z` / `A-Z` labels are the jump keys.
 
-<img src="screenshot.png" alt="Switcheroo overlay with quick-jump shortcut keys">
+![Search overlay with a quick-jump key on each window](readme.assets/screenshot.png)
 
-The quick-switch keys are also drawn on the taskbar buttons, so you can jump
-without even opening the overlay:
+- A separate helper draws the badges, so a badge bug cannot take the switcher down. Default hide time: `10` seconds.
 
-<img src="screenshot-badges.png" alt="Taskbar buttons badged with their quick-switch keys">
+![Taskbar buttons badged with their quick-switch keys](readme.assets/screenshot-badges.png)
 
-When you switch, the target window flashes a blue frame with a solid center
-dot, so you can see at a glance where you landed:
+- The dot blends into the window and fades out. Fade time and opacity are configurable.
 
-<img src="screenshot-highlight.png" alt="Switch feedback: blue frame and center dot on the activated window">
+![Blue frame and soft center dot on the activated window](readme.assets/screenshot-highlight.png)
 
-All of it is configurable:
+- Two columns. New and missing settings use the saved baseline; explicit settings are kept.
 
-<img src="screenshot-options.png" alt="Switcheroo options window">
+![Options window grouped into Shortcuts, Behavior, Appearance, Run](readme.assets/screenshot-options.png)
 
+## Quick start
 
-Download
---------
+### Prerequisites
 
-**[Download Switcheroo Plus here](https://github.com/friedikitty/switcheroo_plus/releases)**
+| Dependency | Version | Why |
+|---|---|---|
+| Windows | `10` / `11` | Windows only |
+| `.NET Framework` | `4.8` | runtime; a source build also needs the targeting pack |
+| `MSBuild` | `VS2022` | source builds only |
 
-If you use [Chocolatey](https://chocolatey.org), the original Switcheroo can be installed with `choco install switcheroo`.
+### Install
 
+- Download from [Releases](https://github.com/friedikitty/switcheroo_plus/releases).
+- Take `switcheroo-setup.exe` or `switcheroo-portable.zip`.
+- Build from source:
 
-Usage
------
-
-Action                         | Shortcut                | Remarks
------------------------------- | ----------------------- | ----------
-Activate Switcheroo            | `Alt + Space`           | This shortcut can be customized in _Options_
-Activate Switcheroo            | `Alt + Tab`             | Optional replacement for the built-in Windows switcher
-Switch to previous app         | configurable            | Optional direct toggle without showing the overlay
-_When Switcheroo is open_      |                         |
-Quick jump to a result         | displayed `0-9` / `a-z` / `A-Z` | Press the character shown in the overlay; Shift switches to uppercase shortcuts
-Search by text                 | `type` or `/`           | `/` focuses the search box if list navigation has focus
-Move selection                 | `Tab`, `Shift + Tab`, `↑`, `↓` | Navigate the current result list
-Toggle result ordering         | click `Recent` / `A–Z` under the search box | Recently used windows first, or plain alphabetical
-Open selected window           | `Enter`                 | With the unfiltered list, Enter lands on the previous app
-Close selected window          | `Ctrl + W`              |
-Dismiss Switcheroo             | `Esc`                   |
-
-Features
---------
-
-- **Quick-jump shortcut keys.** Every listed window shows a `0-9` / `a-z` / `A-Z`
-  key; press it to switch instantly. With _Force English for quick-jump keys_
-  (on by default) the input method is suspended while the result list has focus,
-  so an IME (Pinyin, etc.) cannot swallow the jump keys — the search box keeps
-  your normal input method.
-- **Recent windows on top.** Windows you actually used most recently lead the
-  list (how many is configurable), the rest follow alphabetically, and the
-  current foreground window sinks to the bottom so `Enter` flips back to the
-  previous app. A toggle under the search box switches to plain A–Z ordering.
-- **Taskbar badges.** Each window's quick-switch key is drawn at the top-left of
-  its taskbar button by a separate helper process, so badge glitches can never
-  take the switcher down. Badges auto-hide after a configurable timeout
-  (0 = never).
-- **Switch feedback.** The window you switch to is framed with a blue border
-  pulse and a solid blue center dot — no more "where did I land?". The dot
-  lingers, then shrinks away; both the shrink time and the dot brightness are
-  configurable in _Options_.
-- **Previous-app hotkey and Alt+Tab hook.** Flip between two apps without the
-  overlay, or let Switcheroo replace the built-in Alt+Tab, with optional
-  auto-switch when you release Alt.
-- **Quality of life.** Multi-column layout for many windows, resizable popup
-  with remembered size, and optional usage hints shown in the empty overlay.
-
-
-Watchdog and diagnostics
-------------------------
-
-Launch `switcheroo_plus_watchdog.exe`. It starts the switcher core with no control
-window and owns the tray icon. Right-click the icon and choose **Show control
-window** for Start, Stop, Restart and scrolling logs. Closing that window hides
-it; Exit stops both processes. Starting `switcheroo_plus.exe` directly also routes
-through the watchdog. Startup shortcuts and installer shortcuts target the watchdog.
-
-An unexpected crash captures a full-memory dump in a separate worker, writes an
-incident report and notifies you. Recovery is manual: choose Start or Restart.
-The watchdog also checks UI responsiveness and attempts one hang dump per episode.
-A recovered UI keeps its PID; a persistent hang can be restarted from the control
-window. No automatic restart loop runs.
-
-Diagnostics are under `%USERPROFILE%\.config\.switcheroo_plus\crashes`: each bundle
-contains `core.dmp`, `report.json` and recent logs. Only the latest five bundles
-are retained. `watchdog.log` rotates at 5 MB with three backups. Dump capture has a
-30-second deadline, and a partial file is never published as a completed dump.
-Dumps contain process memory and can contain window titles and other private data;
-review them before sharing. Keep the matching release symbols for analysis.
-
-The design follows Microsoft's [out-of-process MiniDumpWriteDump guidance](https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/nf-minidumpapiset-minidumpwritedump)
-and [debugger event lifecycle](https://learn.microsoft.com/en-us/windows/win32/debug/debugging-events).
-Managed and native unhandled exceptions preserve the fault thread and exception
-context. CLR FailFast can provide only an exit event; its dump retains remaining
-memory but may lack the original fault context. Killing the watchdog also ends
-its owned core/helper job. Ordinary external applications are not owned by that job.
-
-_Options_ are grouped into Shortcuts, Behavior, Appearance and Run across two
-columns. New and missing settings use the saved preference baseline; existing
-explicit settings are preserved.
-
-
-Automated verification
-----------------------
-
-Run `powershell -NoProfile -ExecutionPolicy Bypass -File AutomationTests\Run-All.ps1`.
-See [the acceptance-test guide](AutomationTests/README.md) for coverage, isolation
-and artifact details.
-
-
-History
----------
-
-Switcheroo was originally developed by [James Sulak](https://github.com/jsulak).
-
-[Regin Larsen](https://github.com/kvakulo) took over the project in 2014 and is the current maintainer of the upstream project.
-
-This fork ([switcheroo_plus](https://github.com/friedikitty/switcheroo_plus)) adds the features listed above.
-
-
-How to contribute
------------------
-
-Please report any bug you encounter by [submitting an issue](https://github.com/friedikitty/switcheroo_plus/issues/new).
-
-If you have an idea how to improve Switcheroo Plus, then don't be shy to submit it as well.
-
-Pull requests are greatly appreciated. If you plan a larger feature, then please get in contact, so we can coordinate the efforts.
-
-
-License
--------
-
-Switcheroo is open source and is licensed under the [GNU GPL v. 3](http://www.gnu.org/licenses/gpl.html).
-
-```
-Copyright 2014, 2015 Regin Larsen
-Copyright 2009, 2010 James Sulak
- 
-Switcheroo is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Switcheroo is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
- 
-You should have received a copy of the GNU General Public License
-along with Switcheroo.  If not, see <http://www.gnu.org/licenses/>.
+```powershell
+git clone https://github.com/friedikitty/switcheroo_plus.git
+cd switcheroo_plus
+nuget restore Switcheroo.sln
+msbuild Switcheroo.sln /p:Configuration=Release
 ```
 
+- Build the setup or the portable zip:
 
-Credits
--------
+```powershell
+msbuild Installer\Build.xml /t:CreateSetup
+msbuild Installer\Build.xml /t:CreatePortable
+```
 
-[HellBrick](https://github.com/HellBrick), [ovesen](https://github.com/ovesen), [philippotto](https://github.com/philippotto), [tarikguney](https://github.com/tarikguney), [holymoo](https://github.com/holymoo), [elig0n](https://github.com/elig0n) and [trond-snekvik](https://github.com/trond-snekvik) have contributed to Switcheroo.
+### Minimal example
 
-Switcheroo makes use of these great open source projects:
+```powershell
+.\Switcheroo\bin\Release\switcheroo_plus.exe
+```
 
-* [Managed Windows API](http://mwinapi.sourceforge.net), Copyright © 2006 Michael Schier, GNU Lesser General Public License (LGPL)
-* [PortableSettingsProvider](https://github.com/crdx/PortableSettingsProvider), Copyright © crdx, The MIT License (MIT)
+Press `Alt + Space`. Type part of a window title, then press `Enter`; or press the jump key printed on the result.
+
+## Usage
+
+### Shortcuts
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| Open the overlay | `Alt + Space` | default; change it in Options |
+| Replace `Alt + Tab` | `Alt + Tab` | optional; enable it in Options |
+| Back to the previous app | `Ctrl + Alt + ]` | default; change it in Options |
+| Jump to a result | `0-9` / `a-z` / `A-Z` shown on the row | `Shift` selects uppercase keys |
+| Search | type, or press `/` | `/` moves focus to the search box |
+| Move selection | `Tab` / `Shift + Tab` / `↑` / `↓` | |
+| Open the selected window | `Enter` | with the unfiltered list, returns to the previous app |
+| Close the selected window | `Ctrl + W` | the overlay stays open |
+| Dismiss the overlay | `Esc` | |
+
+### Options
+
+| Setting | Default | Effect |
+|---|---|---|
+| Recent windows on top | `5` | most recent first, the rest alphabetical |
+| Taskbar badge timeout | `10` seconds | `0` = never hide |
+| Dot fade time | `800 ms` | `0` = park instantly |
+| Dot opacity | `100%` | range `20` to `100` |
+| Multi-column layout | on | wraps the list when there are many windows |
+| Force English jump keys | on | suspends the IME while the result list has focus; the search box keeps it |
+| Run on startup | off | installer or Options |
+
+Config lives at `%USERPROFILE%\.config\.switcheroo_plus\config.jsonc`.
+
+The old `%USERPROFILE%\switcheroo` path is migrated once on first launch.
+
+### Entry points
+
+| Script | Role |
+|---|---|
+| `build.ps1` | calls MSBuild at Idle priority, so a build does not starve the desktop |
+| `Installer\Build.xml` | builds the setup and the portable zip |
+| `AutomationTests\Run-All.ps1` | build, NUnit, watchdog and desktop acceptance suites |
+| `switcheroo_plus_watchdog.exe` | normal launcher: tray icon, start/stop/restart, dumps |
+| `switcheroo_plus_badges.exe` | helper process: draws taskbar shortcut badges and auto-hides them |
+
+Starting `switcheroo_plus.exe` directly also routes through the watchdog.
+
+It falls back to the core process only when the watchdog exe is missing.
+
+## FAQ
+
+| Symptom | Check |
+|---|---|
+| `Alt + Space` does nothing | another app may own the combo; pick another in Options or close the owner |
+| Jump keys go into the IME | enable "Force English for quick-jump keys"; the search box keeps normal input |
+| No taskbar badges | the badge helper restarts itself; check the tray control window if it stays empty |
+| No blue frame after switching | check the highlight toggle and dot opacity |
+| No automatic restart after a crash | by design; use Start or Restart in the tray menu |
+| Dump size or privacy | only the latest `5` are kept; `core.dmp` holds process memory, review it before sharing |
+| No highlight in a fullscreen game | exclusive fullscreen, secure desktops and protected surfaces are outside the pixel tests |
+
+## How it works
+
+```mermaid
+flowchart LR
+    HK["Hotkey / Alt+Tab hook"] --> OV["Overlay (WPF)"]
+    OV --> FL["WindowFilterer"]
+    FL --> SW["Switch to the target window"]
+    WD["Watchdog"] -.->|start / stop / dump| OV
+```
+
+- Window enumeration lives in `Core/`: top-level, visible, titled, non-tool windows.
+- Ranking uses scores: prefix `4`, word-start or substring `2`, individual characters `1`; ties break by recency.
+- The watchdog starts the core under a debugger in a kill-on-close job; its tray menu starts, stops and restarts it.
+- An unhandled exception or CLR FailFast triggers an out-of-process `MiniDumpWriteDump`.
+- About `10` seconds without a ping captures one hang dump; recovery stays manual.
+- Badges are drawn by the separate `switcheroo_plus_badges.exe` helper; the switch frame uses small helper windows. Neither uses a full-screen overlay.
+- Mixed-DPI placement uses the target window's DWM frame bounds.
+
+### Watchdog and badge helper
+
+| Process | Role |
+|---|---|
+| `switcheroo_plus_watchdog.exe` | normal launcher and tray shell |
+| `switcheroo_plus_badges.exe` | taskbar badge renderer |
+
+`switcheroo_plus_watchdog.exe` opens without a control window, owns the tray icon, and starts the core in a kill-on-close job. Right-click the tray icon for Start, Stop, Restart and scrolling logs. Startup and installer shortcuts target the watchdog; starting `switcheroo_plus.exe` directly forwards to it, and falls back to the core only when the watchdog exe is missing.
+
+An unhandled exception or CLR FailFast captures an out-of-process full dump; a UI that goes about `10` seconds without a ping captures one hang dump. Recovery is manual. Incidents live under `%USERPROFILE%\.config\.switcheroo_plus\crashes\<timestamp-pid-guid>\` (`core.dmp`, `report.json`, `recent.log`), and the latest five are kept. `watchdog.log` rotates at `5 MB` with three backups.
+
+`switcheroo_plus_badges.exe` is a persistent helper process. It finds taskbar buttons with UI Automation, caches their geometry, pre-creates a chip pool, and draws one small opaque click-through window per shortcut key. Badges auto-hide after `TaskbarBadgeTimeoutSeconds` (default `10`, `0` = never). If the helper dies the client respawns it; a badge failure never freezes the overlay.
+
+## Limits and security
+
+- Windows only; there is no macOS or Linux build.
+- The `Alt + Tab` replacement is a low-level keyboard hook.
+- It can conflict with other switchers, IMEs and remote-desktop tools. Turn it off first when something breaks.
+- Crash dumps hold process memory and window titles.
+- They stay local, at most five are kept, and nothing uploads automatically.
+- Fullscreen games, secure desktops and protected surfaces are outside the pixel tests.
+- They may still need a manual check.
+- Acceptance tests never bypass UAC. Any elevation path is a manual check.
+
+## Verification
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File AutomationTests\Run-All.ps1
+```
+
+- Builds Debug, runs NUnit, then starts isolated watchdog and core processes.
+- The suites cover crash, hang, tray, startup and desktop checks.
+- Results go to `.temp/acceptance/<timestamp>/results.json`; logs, screenshots and dumps sit in GUID subdirectories.
+- CDB opens the dumps when Windows Debugging Tools are installed; missing CDB is reported as skipped.
+- Unit tests only:
+
+```powershell
+packages\NUnit.ConsoleRunner.3.17.0\tools\nunit3-console.exe Core.UnitTests\bin\Debug\Switcheroo.Core.UnitTests.dll
+```
+
+## History
+
+### Before `v0.10.0`
+
+- The fork resumed from upstream `v0.9.2` with .NET Framework 4.8, NUnit 3 and modernized tooling.
+- JSONC config at `~/.config/.switcheroo_plus` with legacy migration.
+- Configurable activation and previous-app hotkeys, `0-9` / `a-z` / `A-Z` jump keys, previous-app toggle and CapsLock+Tab hook.
+- Overlay work: focus on the list, `/` search, menu button, tray double-click, resizable popup, multi-column layout, case-sensitive jump keys up to 62.
+- Named-pipe automation API and `--auto` test mode.
+- Hotkey validation/persistence fixes and reliable switch-back/MRU ordering.
+- Upstream 2018 features: Alt+Tab auto-switch, RunAsAdmin, multi-select, UWP process naming, `Alt+X` close and `Alt+J/K` navigation.
+
+Those features were already in place when `v0.10.0` shipped. The watchdog shell and the badge-helper split followed in the `0.11` line.
+
+### `v0.10.0` and the `0.11` line
+
+- `v0.10.0` (2026-10-30): recent-on-top ordering, taskbar shortcut badges and hotkey conflict probe.
+- `v0.11.0` (2026-11-02): badge rendering moved into `switcheroo_plus_badges.exe`; badge auto-hide; PID lookup removed a 1-2 s popup delay.
+- `v0.11.1` (2026-11-03): badge cache and helper review fixes.
+- `v0.11.2`–`v0.11.4` (2026-11-04): packaging, CI and docs fixes.
+
+### After `v0.11.4`
+
+- Hidden watchdog shell: tray control, start/stop/restart, crash and hang dumps, incident retention.
+- Switch feedback: blue frame pulse plus a soft center dot that fades out.
+- Recent windows pinned in recency order, with a `Recent` / `A–Z` toggle.
+- Force-English quick-jump keys so an IME cannot swallow jump keys.
+- Isolated acceptance suite, test-only feedback/passive-capture hooks and mixed-DPI placement.
+
+## Files and maintenance
+
+| Content | Location | Tracked |
+|---|---|---|
+| Window logic | `Core/` | yes |
+| WPF shell | `Switcheroo/` | yes |
+| Watchdog | `Watchdog/` | yes |
+| Badge helper | `BadgeOverlay/` | yes |
+| Installer and packaging | `Installer/`, `ChocolateyPackages/` | yes |
+| Config | `%USERPROFILE%\.config\.switcheroo_plus\config.jsonc` | no |
+| Crash dumps | `%USERPROFILE%\.config\.switcheroo_plus\crashes` | no |
+| Watchdog log | `watchdog.log` in the same folder, `5 MB` rotation, `3` backups | no |
+| Acceptance artifacts | `.temp/acceptance/` | no |
+
+`packages/` is not tracked. Local builds and CI both run `nuget restore Switcheroo.sln` first.
+
+## License / Credits
+
+- Switcheroo is released under GNU GPL v3, see [`LICENSE.txt`](LICENSE.txt).
+- Original author: James Sulak (2009).
+- Regin Larsen has maintained the upstream project since 2014. This fork is maintained by friedikitty.
+- Contributors: HellBrick, ovesen, philippotto, tarikguney, holymoo, elig0n, trond-snekvik.
+- Dependency: [Managed Windows API](http://mwinapi.sourceforge.net) (LGPL).
+- Dependency: [PortableSettingsProvider](https://github.com/crdx/PortableSettingsProvider) (MIT).
+
+## Contributing
+
+| What you want | Start here |
+|---|---|
+| Just use it | [Releases](https://github.com/friedikitty/switcheroo_plus/releases) |
+| Report a bug | [Issues](https://github.com/friedikitty/switcheroo_plus/issues/new) |
+| Propose a feature | open an issue first |
+| Change code | `Fork -> Patch -> AutomationTests\Run-All.ps1 -> PR` |
+
+Release tags and earlier upstream history live in [`changelog.md`](changelog.md).
+
+If it saves you a few `Alt + Tab` presses, tell us what broke.
+
+![Switcheroo Plus](logo.png)

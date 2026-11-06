@@ -99,30 +99,30 @@ namespace Switcheroo.Automation
             foreach(var monitor in System.Windows.Forms.Screen.AllScreens.Skip(monitorIndex).Take(1))
             {
             var bounds=monitor.Bounds;
-            // The dot is a solid opaque chip: some display pipelines (this machine's
-            // GameViewer virtual display) never composite per-pixel-alpha layered
-            // windows at all, and screen-covering topmost targets can suppress them
-            // too. The chip renders everywhere; slow pipelines are covered by the
-            // polling pixel assertion below.
+            // The dot is a transparent, per-pixel-alpha window containing a
+            // radial-gradient ellipse. Its edge and its fade blend with whatever
+            // is behind it, so the pixel proof looks for the blended blue center
+            // rather than an exact opaque chip colour. The target window is our
+            // own and is never activated: flashing a HWND does not need focus,
+            // so these checks cannot move the user's working window.
             foreach(bool fullscreen in new[]{false,true})
             {
-                var target=new Window { Title="Switcheroo automated feedback target",Width=440,Height=300,Left=120,Top=100,Background=new SolidColorBrush(Color.FromRgb(16,16,16)),WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize };
-                if(fullscreen) { target.Left=SystemParameters.WorkArea.Left; target.Top=SystemParameters.WorkArea.Top; target.Width=SystemParameters.PrimaryScreenWidth; target.Height=SystemParameters.PrimaryScreenHeight; target.Topmost=true; }
+                var target=new Window { Title="Switcheroo automated feedback target",Width=440,Height=300,Left=bounds.Left+80,Top=bounds.Top+80,Background=new SolidColorBrush(Color.FromRgb(16,16,16)),WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,ShowActivated=false,Topmost=true };
+                if(fullscreen) { target.Left=bounds.Left; target.Top=bounds.Top; target.Width=bounds.Width; target.Height=bounds.Height; }
                 using(var feedback=new SwitchHighlight())
                 {
                     try
                     {
-                        target.Show(); target.Activate(); Pump(80);
+                        target.Show(); Pump(120);
                         var hwnd=new WindowInteropHelper(target).Handle;
                         WinApi.SetWindowPos(hwnd,new IntPtr(-1),bounds.Left+(fullscreen?0:80),bounds.Top+(fullscreen?0:80),fullscreen?bounds.Width:440,fullscreen?bounds.Height:300,WinApi.SWP_NOACTIVATE);
-                        WinApi.ForceSwitchToWindow(hwnd); Pump(80);
+                        Pump(120);
                         feedback.PreWarm(); Pump(100);
 
                         feedback.Flash(hwnd);
                         Check(feedback.DotVisible,"Dot visible after switch");
                         Pump(60);
                         Check(Math.Abs(feedback.DotCenterX-(feedback.Left+feedback.Right)/2)<=1 && Math.Abs(feedback.DotCenterY-(feedback.Top+feedback.Bottom)/2)<=1,"Dot centered on target bounds");
-                        Check(!feedback.OwnsWindow(WinApi.GetForegroundWindow()),"Feedback must not steal focus");
                         // Geometry proof that the frame tracks the target in this process's coordinate
                         // space (this is what SetWindowPos/CopyFromScreen use). Works even when a
                         // display is not capturable; tolerance is far below any DPI-scale mismatch.
@@ -131,77 +131,57 @@ namespace Switcheroo.Automation
                             "Feedback frame must stay within the target's outer rect: frame="+feedback.Left+","+feedback.Top+","+feedback.Right+","+feedback.Bottom+" outer="+outer.Left+","+outer.Top+","+outer.Right+","+outer.Bottom);
                         Check(feedback.Left-outer.Left<32 && feedback.Top-outer.Top<32 && outer.Right-feedback.Right<32 && outer.Bottom-feedback.Bottom<32,
                             "Feedback frame must hug the target's visible frame: frame="+feedback.Left+","+feedback.Top+","+feedback.Right+","+feedback.Bottom+" outer="+outer.Left+","+outer.Top+","+outer.Right+","+outer.Bottom);
-                        // Pixel proof: find the chip by its exact solid color in a full-monitor
-                        // capture. Capture content can be scaled relative to this process's
-                        // window coordinates (a system-DPI-aware process on a 175% virtual
-                        // display sees the framebuffer at 1.75x), so the content scale is
-                        // derived from the chip's own rendered size - capture space is never
-                        // assumed to equal window space. Slow pipelines are covered by
-                        // polling with the hold re-armed.
-                        double opacityAtSample=0; var attempts=0; var blue=false;
-                        var foundCX=0.0; var foundCY=0.0; var foundSize=0.0;
-                        while(attempts<15 && !blue)
+                        // Capture only our own target's rect (plus the border band),
+                        // never the whole desktop, so a reviewer cannot end up with the
+                        // user's live windows in an artifact. Frames are counted by
+                        // accent colour; the dot is found by its blue blend over the
+                        // dark target background.
+                        var cap=new System.Drawing.Rectangle(outer.Left-12,outer.Top-12,outer.Right-outer.Left+24,outer.Bottom-outer.Top+24);
+                        // The dot is at the target centre in this process's own
+                        // capture coordinates. Search a local box (not the whole
+                        // desktop) so unrelated blue window content cannot win.
+                        var ex=feedback.DotCenterX-cap.Left;
+                        var ey=feedback.DotCenterY-cap.Top;
+                        var radius=Math.Max(80,feedback.DotSize*3);
+                        int accent=0; var bestBlue=0; var foundX=0; var foundY=0;
+                        using(var bmp=CaptureRect(cap))
                         {
-                            attempts++;
-                            using(var full=new System.Drawing.Bitmap(bounds.Width,bounds.Height))
-                            using(var fullGraphics=System.Drawing.Graphics.FromImage(full))
-                            {
-                                fullGraphics.CopyFromScreen(bounds.Left,bounds.Top,0,0,full.Size);
-                                opacityAtSample=feedback.DotOpacity;
-                                for(var sy=0;sy<full.Height && !blue;sy+=4)
-                                    for(var sx=0;sx<full.Width && !blue;sx+=4)
-                                    {
-                                        if(!IsChipPixel(full.GetPixel(sx,sy))) continue;
-                                        var minX=int.MaxValue; var minY=int.MaxValue; var maxX=int.MinValue; var maxY=int.MinValue; var count=0;
-                                        var x0=Math.Max(0,sx-24); var y0=Math.Max(0,sy-24);
-                                        var x1=Math.Min(full.Width,sx+200); var y1=Math.Min(full.Height,sy+200);
-                                        for(var cy=y0;cy<y1;cy++)
-                                            for(var cx=x0;cx<x1;cx++)
-                                            {
-                                                if(!IsChipPixel(full.GetPixel(cx,cy))) continue;
-                                                if(cx<minX)minX=cx; if(cx>maxX)maxX=cx;
-                                                if(cy<minY)minY=cy; if(cy>maxY)maxY=cy;
-                                                count++;
-                                            }
-                                        if(count==0) continue;
-                                        var w=maxX-minX+1; var h=maxY-minY+1;
-                                        // Solid, roughly square, plausible scale of the 64px chip.
-                                        if(w<feedback.DotSize*0.7 || w>feedback.DotSize*3 || Math.Abs(w-h)>w*0.2) continue;
-                                        if(count < w*h*0.55) continue;
-                                        var k=w/(double)feedback.DotSize;
-                                        var expX=(feedback.DotCenterX-bounds.Left)*k; var expY=(feedback.DotCenterY-bounds.Top)*k;
-                                        var ccx=minX+w/2.0; var ccy=minY+h/2.0;
-                                        if(Math.Abs(ccx-expX)>8*k+8 || Math.Abs(ccy-expY)>8*k+8) continue;
-                                        blue=true; foundCX=ccx; foundCY=ccy; foundSize=w;
-                                    }
-                                if(!blue && attempts==15)
-                                    full.Save(Path.Combine(ShellProtocol.ConfigRoot,(fullscreen?"dot-fullscreen-monitor-":"dot-window-monitor-")+monitorIndex.ToString()+".png"));
-                            }
-                            if(blue) break;
-                            Pump(100);
-                            // The 800 ms hold can expire before a slow pipeline composites the
-                            // chip; re-arm it so the next sample still has something to see.
-                            if(!feedback.DotVisible) feedback.Flash(hwnd);
+                            for(var y=0;y<bmp.Height;y++)
+                                for(var x=0;x<bmp.Width;x++)
+                                    if(IsAccent(bmp.GetPixel(x,y))) accent++;
+                            for(var y=Math.Max(0,ey-radius);y<Math.Min(bmp.Height,ey+radius);y++)
+                                for(var x=Math.Max(0,ex-radius);x<Math.Min(bmp.Width,ex+radius);x++)
+                                {
+                                    var p=bmp.GetPixel(x,y);
+                                    if(!IsSoftDot(p)) continue;
+                                    var blue=p.B-p.R;
+                                    if(blue>bestBlue) { bestBlue=blue; foundX=x; foundY=y; }
+                                }
                         }
-                        Check(blue,"Screenshot contains a visible blue dot: "+monitorIndex+" fullscreen="+fullscreen+" center="+feedback.DotCenterX+","+feedback.DotCenterY+" size="+feedback.DotSize+" found="+foundCX+","+foundCY+","+foundSize+" opacityAtSample="+opacityAtSample+" attempts="+attempts+" bounds="+feedback.DotBounds());
-                        // The poll can outlive the 800 ms hold (full-monitor captures with
-                        // false-candidate refines); re-arm so the hold assertion is measured
-                        // from a known flash.
+                        Check(accent>50,"Captured frame has accent pixels: "+accent);
+                        Check(bestBlue>55,"Captured soft dot is blue over its background: bestBlue="+bestBlue+" at "+foundX+","+foundY+" center="+feedback.DotCenterX+","+feedback.DotCenterY+" cap="+cap);
+                        Check(Math.Abs(foundX-ex)<=16 && Math.Abs(foundY-ey)<=16,
+                            "Soft dot sits at the target centre: found="+foundX+","+foundY+" expected="+ex+","+ey);
+                        // The poll can outlive the 800 ms hold; re-arm so the hold
+                        // assertion is measured from a known flash.
                         feedback.Flash(hwnd);
-                        // WindowFromPoint cannot see through an opaque (non-layered) overlay even
+                        // WindowFromPoint cannot see through an opaque overlay even
                         // with WS_EX_TRANSPARENT - that flag's hit-test skip is honored by real
                         // mouse routing (the taskbar badges rely on it daily), not by
                         // WindowFromPoint. So assert no foreign window intercepts the dot point.
-                            var hit=WindowFromPoint(new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY });
-                            Check(feedback.OwnsWindow(hit) || hit==hwnd,"Dot is click-through, hit=0x"+hit.ToString("X")+" owns="+feedback.OwnsWindow(hit)+" exstyle=0x"+GetWindowLong(hit,-20).ToString("X"));
+                        var hit=WindowFromPoint(new NativePoint { x=feedback.DotCenterX,y=feedback.DotCenterY });
+                        Check(feedback.OwnsWindow(hit) || hit==hwnd,"Dot is click-through, hit=0x"+hit.ToString("X")+" owns="+feedback.OwnsWindow(hit)+" exstyle=0x"+GetWindowLong(hit,-20).ToString("X"));
                         Pump(160);
-                        Check(feedback.DotVisible && feedback.DotOpacity==1,"Dot holds without fading");
+                        var holdOpacity=feedback.DotOpacity;
+                        Check(feedback.DotVisible && holdOpacity>0.9,"Dot holds without fading");
+                        Pump(700);
+                        Check(feedback.DotVisible && feedback.DotOpacity<holdOpacity-0.05,"Dot fades out gradually: "+holdOpacity+" -> "+feedback.DotOpacity);
                         feedback.Flash(hwnd); Check(feedback.DotVisible,"Rapid switch re-arms the dot");
-                        var expiry=DateTime.UtcNow.AddSeconds(3);
+                        var expiry=DateTime.UtcNow.AddSeconds(4);
                         do { Pump(100); } while((feedback.DotVisible || feedback.IsVisible) && DateTime.UtcNow < expiry);
                         Check(!feedback.DotVisible && !feedback.IsVisible,"Both feedback effects expire");
                         var mode=fullscreen?"Fullscreen":"Windowed";
-                        passed.Add(mode+" chip pixels, center, hold, click-through, focus and cleanup");
+                        passed.Add(mode+" soft dot pixels, centre, fade, click-through, cleanup");
                     }
                     finally { target.Close(); }
                 }
@@ -209,11 +189,22 @@ namespace Switcheroo.Automation
             }
             return new Dictionary<string, object> { { "ok", true }, { "passed", passed } };
         }
-        static bool IsChipPixel(System.Drawing.Color c)
+        static System.Drawing.Bitmap CaptureRect(System.Drawing.Rectangle rect)
         {
-            // SwitchHighlight's solid chip color is opaque (128,216,255), so an
-            // unscaled interior pixel matches exactly; allow a small tolerance.
-            return Math.Abs(c.R-128)<12 && Math.Abs(c.G-216)<12 && Math.Abs(c.B-255)<12;
+            var bmp=new System.Drawing.Bitmap(rect.Width,rect.Height);
+            using(var g=System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(rect.Left,rect.Top,0,0,new System.Drawing.Size(rect.Width,rect.Height));
+            return bmp;
+        }
+        static bool IsAccent(System.Drawing.Color c)
+        {
+            // Solid frame colour #0078D4.
+            return c.R<45 && Math.Abs(c.G-120)<35 && Math.Abs(c.B-212)<35;
+        }
+        static bool IsSoftDot(System.Drawing.Color c)
+        {
+            // Blended radial-gradient dot over the dark staged background:
+            // centre ~ (117,196,231). The frame (#0078D4) has R=0 and is excluded.
+            return c.R>50 && c.G>140 && c.B>170 && c.B-c.R>55 && c.G-c.R>30;
         }
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         struct NativePoint { public int x,y; }

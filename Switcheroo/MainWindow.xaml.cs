@@ -74,6 +74,8 @@ namespace Switcheroo
         private TaskbarBadgeOverlay _taskbarBadges;
         private DispatcherTimer _badgeWarmUpTimer;
         private SwitchHighlight _switchHighlight;
+        private bool _passiveShow;
+        private bool _passiveShown;
         private readonly bool _autoMode;
 
         // Most-recently-used window tracking (front = most recent). Used to keep
@@ -365,6 +367,23 @@ namespace Switcheroo
                 WinApi.GetWindowProcessId(hwnd) != WinApi.GetWindowProcessId(targetWindow.HWnd))
                 hwnd = targetWindow.HWnd;
 
+            HighlightWindow(hwnd);
+        }
+
+        /// <summary>
+        /// Test hook (automation action "flashhwnd"): draw the feedback for an
+        /// arbitrary HWND without switching to it, so visual tests and README
+        /// captures cannot move the user's foreground window.
+        /// </summary>
+        public void FlashHighlightForTest(IntPtr hwnd)
+        {
+            if (!_config.SwitchHighlightEnabled)
+                return;
+            HighlightWindow(hwnd);
+        }
+
+        private void HighlightWindow(IntPtr hwnd)
+        {
             if (_switchHighlight == null)
                 _switchHighlight = new SwitchHighlight();
             _switchHighlight.DotFadeMs = _config.SwitchHighlightDotFadeMs;
@@ -724,15 +743,20 @@ namespace Switcheroo
             // active; the search box keeps the system's normal IME behavior.
             InputMethod.SetIsInputMethodEnabled(lb, !_config.DisableImeOnQuickJumpEnabled);
             tb.Clear();
-            CenterWindow();
+            if (!_passiveShow)
+                CenterWindow();
             ScrollSelectedItemIntoView();
 
-            // Focus the list so 0-9/A-Z work immediately; / will focus the text box
-            Dispatcher.BeginInvoke(new Action(() =>
+            // Focus the list so 0-9/A-Z work immediately; / will focus the text box.
+            // A passive test show must not ask WPF to activate the overlay.
+            if (!_passiveShow)
             {
-                if (lb.Items.Count > 0)
-                    Keyboard.Focus(lb);
-            }), DispatcherPriority.Render);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (lb.Items.Count > 0)
+                        Keyboard.Focus(lb);
+                }), DispatcherPriority.Render);
+            }
 
             // Remember the current foreground window before we switch
             UpdateTaskbarBadges();
@@ -1033,6 +1057,37 @@ namespace Switcheroo
         }
 
         public void OpenOptionsForShell() { Options(); }
+
+        /// <summary>
+        /// Test hook (automation action "optionspassive"): show Options
+        /// non-modally at a caller-chosen position without activating it.
+        /// </summary>
+        public void OpenOptionsPassiveForTest(int x, int y)
+        {
+            if (_optionsWindow == null)
+            {
+                _optionsWindow = new OptionsWindow
+                {
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = x,
+                    Top = y,
+                    ShowActivated = false,
+                    Topmost = true
+                };
+                _optionsWindow.Closed += (sender, args) =>
+                {
+                    _optionsWindow = null;
+                    ReloadConfig();
+                };
+                _optionsWindow.Show();
+            }
+            else
+            {
+                _optionsWindow.Left = x;
+                _optionsWindow.Top = y;
+                _optionsWindow.Show();
+            }
+        }
         public void OpenAboutForShell() { About(); }
         public void ToggleStartupForShell() { new AutoStart().IsEnabled = !new AutoStart().IsEnabled; }
 
@@ -1052,6 +1107,42 @@ namespace Switcheroo
             }
         }
 
+        /// <summary>
+        /// Test hook (automation action "showpassive"): lay the overlay out on a
+        /// display without activating it, so visual tests and README captures do
+        /// not take the user's focus. The normal lost-focus hide is suspended
+        /// while the passive overlay is being captured.
+        /// </summary>
+        public void ShowPassiveForTest(int x, int y)
+        {
+            _passiveShow = true;
+            ShowActivated = false;
+            if (!_passiveShown)
+            {
+                tb.IsEnabled = true;
+                _foregroundWindow = SystemWindow.ForegroundWindow;
+                RestoreWindowSize();
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = x;
+                Top = y;
+                // StartupUri already created this window with Opacity 0, so
+                // Visibility may be Visible even though it was never shown by
+                // the user. Show() is harmless on an already-shown window; the
+                // important part is that LoadData runs and Opacity becomes 1
+                // without Activate().
+                Show();
+                LoadData(InitialFocus.NextItem);
+                _passiveShown = true;
+            }
+            Opacity = 1;
+            Left = x;
+            Top = y;
+            // SizeToContent can move the window while laying out; pin the
+            // top-left again with a no-activate move.
+            WinApi.SetWindowPos(new WindowInteropHelper(this).EnsureHandle(), IntPtr.Zero,
+                x, y, 0, 0, WinApi.SWP_NOSIZE | WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE);
+        }
+
         public void SetQuery(string query)
         {
             if (Visibility != Visibility.Visible)
@@ -1059,7 +1150,8 @@ namespace Switcheroo
                 ShowAndActivate();
             }
             tb.Text = query ?? string.Empty;
-            tb.Focus();
+            if (!_passiveShow)
+                tb.Focus();
         }
 
         public List<Dictionary<string, string>> GetWindowList()
@@ -1718,6 +1810,8 @@ namespace Switcheroo
 
         private void MainWindow_OnLostFocus(object sender, EventArgs e)
         {
+            if (_passiveShow)
+                return;
             HideWindow();
         }
 
