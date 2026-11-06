@@ -74,8 +74,9 @@ Features
   take the switcher down. Badges auto-hide after a configurable timeout
   (0 = never).
 - **Switch feedback.** The window you switch to is framed with a blue border
-  pulse and a solid blue center dot for about a second — no more "where did I
-  land?".
+  pulse and a solid blue center dot — no more "where did I land?". The dot
+  lingers, then fades out; both the fade-out time and the dot opacity are
+  configurable in _Options_.
 - **Previous-app hotkey and Alt+Tab hook.** Flip between two apps without the
   overlay, or let Switcheroo replace the built-in Alt+Tab, with optional
   auto-switch when you release Alt.

@@ -367,6 +367,8 @@ namespace Switcheroo
 
             if (_switchHighlight == null)
                 _switchHighlight = new SwitchHighlight();
+            _switchHighlight.DotFadeMs = _config.SwitchHighlightDotFadeMs;
+            _switchHighlight.DotOpacityPercent = _config.SwitchHighlightDotOpacityPercent;
             _switchHighlight.Flash(hwnd);
         }
 

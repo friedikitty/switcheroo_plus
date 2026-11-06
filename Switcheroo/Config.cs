@@ -80,6 +80,12 @@ namespace Switcheroo
         // Show an accent border and fading blue dot on the activated window
         public bool SwitchHighlightEnabled { get; set; } = true;
 
+        // Milliseconds the center dot fades out after its 800 ms hold; 0 = park instantly
+        public int SwitchHighlightDotFadeMs { get; set; } = 800;
+
+        // Center dot opacity in percent (20-100)
+        public int SwitchHighlightDotOpacityPercent { get; set; } = 100;
+
         /// <summary>
         /// Legacy config directory used by older builds. Kept for one-time migration.
         /// </summary>
@@ -345,7 +351,13 @@ namespace Switcheroo
             sb.AppendLine(string.Format("  \"TaskbarBadgeTimeoutSeconds\": {0},", cfg.TaskbarBadgeTimeoutSeconds));
             sb.AppendLine();
             sb.AppendLine("  // Show an accent border and fading blue dot on the activated window");
-            sb.AppendLine(string.Format("  \"SwitchHighlightEnabled\": {0}", Bool(cfg.SwitchHighlightEnabled)));
+            sb.AppendLine(string.Format("  \"SwitchHighlightEnabled\": {0},", Bool(cfg.SwitchHighlightEnabled)));
+            sb.AppendLine();
+            sb.AppendLine("  // Milliseconds the center dot fades out after its 800 ms hold; 0 = park instantly");
+            sb.AppendLine(string.Format("  \"SwitchHighlightDotFadeMs\": {0},", cfg.SwitchHighlightDotFadeMs));
+            sb.AppendLine();
+            sb.AppendLine("  // Center dot opacity in percent (20-100)");
+            sb.AppendLine(string.Format("  \"SwitchHighlightDotOpacityPercent\": {0}", cfg.SwitchHighlightDotOpacityPercent));
             sb.AppendLine("}");
             return sb.ToString();
         }

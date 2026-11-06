@@ -31,9 +31,9 @@ namespace Switcheroo
     /// put the pulse ~1.5x off target on mixed-DPI monitors.
     ///
     /// The pulse is 3 px for 160 ms, 2 px for 80 ms, 1 px for 80 ms, then parked.
-    /// The dot holds for 800 ms at the window's center, then parks. Timers always
-    /// park every window, so a target that disappears mid-pulse cannot leave
-    /// artifacts behind.
+    /// The dot holds for 800 ms at the window's center at DotOpacityPercent, then
+    /// fades out over DotFadeMs (0 = parks instantly). Timers always park every
+    /// window, so a target that disappears mid-pulse cannot leave artifacts behind.
     /// </summary>
     public class SwitchHighlight : IDisposable
     {
@@ -55,9 +55,37 @@ namespace Switcheroo
         private Window dot;
         private IntPtr dotHandle;
         private DispatcherTimer dotHold;
+        private DispatcherTimer dotFade;
         private readonly System.Diagnostics.Stopwatch dotClock = new System.Diagnostics.Stopwatch();
-        public bool DotVisible { get { return dotClock.IsRunning && dotClock.ElapsedMilliseconds < DotHoldMs; } }
-        public double DotOpacity { get { return DotVisible ? 1 : 0; } }
+
+        /// <summary>Milliseconds the dot fades out after its 800 ms hold; 0 = park instantly.</summary>
+        public int DotFadeMs { get; set; }
+        /// <summary>Dot opacity in percent (20-100) during the hold.</summary>
+        public int DotOpacityPercent { get; set; }
+
+        public SwitchHighlight()
+        {
+            DotFadeMs = 800;
+            DotOpacityPercent = 100;
+        }
+
+        public bool DotVisible
+        {
+            get { return dotClock.IsRunning && dotClock.ElapsedMilliseconds < DotHoldMs + Math.Max(0, DotFadeMs); }
+        }
+        public double DotOpacity
+        {
+            get
+            {
+                if (!DotVisible)
+                    return 0;
+                var baseOpacity = Math.Max(20, Math.Min(100, DotOpacityPercent)) / 100.0;
+                var fadeElapsed = dotClock.ElapsedMilliseconds - DotHoldMs;
+                if (fadeElapsed <= 0 || DotFadeMs <= 0)
+                    return baseOpacity;
+                return Math.Max(0, baseOpacity * (1.0 - fadeElapsed / (double)DotFadeMs));
+            }
+        }
         public int DotCenterX { get; private set; }
         public int DotCenterY { get; private set; }
         public int DotSize { get; private set; }
@@ -149,13 +177,32 @@ namespace Switcheroo
             WinApi.SetWindowPos(dotHandle, new IntPtr(-1), DotCenterX - DotSize / 2, DotCenterY - DotSize / 2,
                 DotSize, DotSize, WinApi.SWP_NOACTIVATE);
             dotClock.Restart();
+            if (dotFade != null) dotFade.Stop();
+            dot.Opacity = DotOpacity;
             if (dotHold == null)
             {
                 dotHold = new DispatcherTimer();
                 dotHold.Tick += (sender, args) =>
                 {
                     dotHold.Stop();
-                    if (!DotVisible) ParkDot();
+                    // Still visible => the hold ended but the fade remains.
+                    if (DotVisible && dotFade != null)
+                    {
+                        dotFade.Start();
+                        return;
+                    }
+                    ParkDot();
+                };
+                dotFade = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+                dotFade.Tick += (sender, args) =>
+                {
+                    if (!DotVisible)
+                    {
+                        dotFade.Stop();
+                        ParkDot();
+                        return;
+                    }
+                    dot.Opacity = DotOpacity;
                 };
             }
             dotHold.Stop();
@@ -166,6 +213,7 @@ namespace Switcheroo
         private void ParkDot()
         {
             if (dotHold != null) dotHold.Stop();
+            if (dotFade != null) dotFade.Stop();
             if (dotHandle != IntPtr.Zero)
                 WinApi.SetWindowPos(dotHandle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
                     WinApi.SWP_NOZORDER | WinApi.SWP_NOACTIVATE | WinApi.SWP_NOSIZE);
@@ -314,8 +362,9 @@ namespace Switcheroo
         public void Dispose()
         {
             dotClock.Stop();
-            if (dot != null) { dot.Close(); dot = null; dotHandle = IntPtr.Zero; }
             if (dotHold != null) { dotHold.Stop(); dotHold = null; }
+            if (dotFade != null) { dotFade.Stop(); dotFade = null; }
+            if (dot != null) { dot.Close(); dot = null; dotHandle = IntPtr.Zero; }
             if (_pulse != null)
             {
                 _pulse.Stop();

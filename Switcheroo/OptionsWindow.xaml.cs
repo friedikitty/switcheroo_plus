@@ -91,6 +91,10 @@ namespace Switcheroo
             BadgeTimeoutBox.Text = _config.TaskbarBadgeTimeoutSeconds.ToString();
             BadgeTimeoutBox.IsEnabled = _config.TaskbarBadgesEnabled;
             SwitchHighlightCheckBox.IsChecked = _config.SwitchHighlightEnabled;
+            DotFadeBox.Text = _config.SwitchHighlightDotFadeMs.ToString();
+            DotOpacityBox.Text = _config.SwitchHighlightDotOpacityPercent.ToString();
+            DotFadeBox.IsEnabled = _config.SwitchHighlightEnabled;
+            DotOpacityBox.IsEnabled = _config.SwitchHighlightEnabled;
             OpenUsageHintsByDefaultCheckBox.IsChecked = _config.OpenUsageHintsByDefault;
             MultiColumnCheckBox.IsChecked = _config.MultiColumnEnabled;
             RecentOnTopCheckBox.IsChecked = _config.RecentWindowsOnTopEnabled;
@@ -174,6 +178,14 @@ namespace Switcheroo
                 badgeTimeout = 10;
             _config.TaskbarBadgeTimeoutSeconds = Math.Max(0, Math.Min(300, badgeTimeout));
             _config.SwitchHighlightEnabled = SwitchHighlightCheckBox.IsChecked.GetValueOrDefault();
+            int dotFade;
+            if (!int.TryParse(DotFadeBox.Text, out dotFade))
+                dotFade = 800;
+            _config.SwitchHighlightDotFadeMs = Math.Max(0, Math.Min(10000, dotFade));
+            int dotOpacity;
+            if (!int.TryParse(DotOpacityBox.Text, out dotOpacity))
+                dotOpacity = 100;
+            _config.SwitchHighlightDotOpacityPercent = Math.Max(20, Math.Min(100, dotOpacity));
             _config.PreviousAppEnabled = previousAppEnabled;
             _config.PreviousAppAlt = _previousAppViewModel.Alt;
             _config.PreviousAppCtrl = _previousAppViewModel.Ctrl;
@@ -466,6 +478,18 @@ namespace Switcheroo
         private void PreviousAppCheckBox_Checked(object sender, RoutedEventArgs e)
         {
             PreviousAppPreview.IsEnabled = true;
+        }
+
+        private void SwitchHighlightCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            DotFadeBox.IsEnabled = true;
+            DotOpacityBox.IsEnabled = true;
+        }
+
+        private void SwitchHighlightCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            DotFadeBox.IsEnabled = false;
+            DotOpacityBox.IsEnabled = false;
         }
 
         private void PreviousAppCheckBox_OnUnchecked(object sender, RoutedEventArgs e)

@@ -65,6 +65,10 @@ namespace Switcheroo.Automation
                 Check(options.BadgeTimeoutBox.IsEnabled,"Badge timeout re-enabled");
                 options.RecentOnTopCheckBox.IsChecked=false;
                 Check(!options.RecentOnTopCountBox.IsEnabled,"Recent count follows toggle");
+                options.SwitchHighlightCheckBox.IsChecked=false;
+                Check(!options.DotFadeBox.IsEnabled && !options.DotOpacityBox.IsEnabled,"Dot controls follow toggle");
+                options.SwitchHighlightCheckBox.IsChecked=true;
+                Check(options.DotFadeBox.IsEnabled && options.DotOpacityBox.IsEnabled,"Dot controls re-enabled");
                 options.PreviousAppCheckBox.IsChecked=false;
                 Check(!options.PreviousAppPreview.IsEnabled,"Shortcut editor follows toggle");
                 Snapshot(options,"options-normal");
