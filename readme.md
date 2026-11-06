@@ -1,22 +1,43 @@
-<img src="logo.png" alt="Switcheroo" width="48px" height="48px"> Switcheroo  [![Build Status](https://img.shields.io/appveyor/ci/kvakulo/switcheroo.svg)](https://ci.appveyor.com/project/kvakulo/switcheroo) ![GPL License](https://img.shields.io/badge/license-GPL-brightgreen.svg)
+<img src="logo.png" alt="Switcheroo" width="48px" height="48px"> Switcheroo Plus ![GPL License](https://img.shields.io/badge/license-GPL-brightgreen.svg)
 ==========
 
-Switcheroo is for anyone who spends more time using a keyboard than a mouse.
+Switcheroo Plus is for anyone who spends more time using a keyboard than a mouse.
 Instead of alt-tabbing through a (long) list of open windows, Switcheroo lets
 you jump straight to the window you want: search by title, press the displayed
 shortcut character, or flip back to the previous app with a dedicated hotkey.
 
-## Screenshot
+It is a fork of [Switcheroo](https://github.com/kvakulo/Switcheroo) that adds
+quick-jump shortcut keys, taskbar key badges, recent-windows-on-top ordering,
+input-method handling for quick jumps, switch feedback highlighting and a
+crash watchdog.
 
-<img src="screenshot.png" alt="Screenshot of Switcheroo in action" width="540px" height="372px">
+## Screenshots
+
+The search overlay with per-window quick-jump keys (staged demo windows):
+
+<img src="screenshot.png" alt="Switcheroo overlay with quick-jump shortcut keys">
+
+The quick-switch keys are also drawn on the taskbar buttons, so you can jump
+without even opening the overlay:
+
+<img src="screenshot-badges.png" alt="Taskbar buttons badged with their quick-switch keys">
+
+When you switch, the target window flashes a blue frame with a solid center
+dot, so you can see at a glance where you landed:
+
+<img src="screenshot-highlight.png" alt="Switch feedback: blue frame and center dot on the activated window">
+
+All of it is configurable:
+
+<img src="screenshot-options.png" alt="Switcheroo options window">
 
 
 Download
 --------
 
-**[Download Switcheroo here](https://github.com/kvakulo/Switcheroo/releases)**
+**[Download Switcheroo Plus here](https://github.com/friedikitty/switcheroo_plus/releases)**
 
-If you use [Chocolatey](https://chocolatey.org), Switcheroo can be installed with `choco install switcheroo`.
+If you use [Chocolatey](https://chocolatey.org), the original Switcheroo can be installed with `choco install switcheroo`.
 
 
 Usage
@@ -31,13 +52,35 @@ _When Switcheroo is open_      |                         |
 Quick jump to a result         | displayed `0-9` / `a-z` / `A-Z` | Press the character shown in the overlay; Shift switches to uppercase shortcuts
 Search by text                 | `type` or `/`           | `/` focuses the search box if list navigation has focus
 Move selection                 | `Tab`, `Shift + Tab`, `↑`, `↓` | Navigate the current result list
-Open selected window           | `Enter`                 |
+Toggle result ordering         | click `Recent` / `A–Z` under the search box | Recently used windows first, or plain alphabetical
+Open selected window           | `Enter`                 | With the unfiltered list, Enter lands on the previous app
 Close selected window          | `Ctrl + W`              |
 Dismiss Switcheroo             | `Esc`                   |
 
-_Options_                     |                         |
-Resize popup                  | drag edges              | Size is remembered across activations
-Multi-column layout            | checkbox                | Side-by-side columns when many windows are open
+Features
+--------
+
+- **Quick-jump shortcut keys.** Every listed window shows a `0-9` / `a-z` / `A-Z`
+  key; press it to switch instantly. With _Force English for quick-jump keys_
+  (on by default) the input method is suspended while the result list has focus,
+  so an IME (Pinyin, etc.) cannot swallow the jump keys — the search box keeps
+  your normal input method.
+- **Recent windows on top.** Windows you actually used most recently lead the
+  list (how many is configurable), the rest follow alphabetically, and the
+  current foreground window sinks to the bottom so `Enter` flips back to the
+  previous app. A toggle under the search box switches to plain A–Z ordering.
+- **Taskbar badges.** Each window's quick-switch key is drawn at the top-left of
+  its taskbar button by a separate helper process, so badge glitches can never
+  take the switcher down. Badges auto-hide after a configurable timeout
+  (0 = never).
+- **Switch feedback.** The window you switch to is framed with a blue border
+  pulse and a solid blue center dot for about a second — no more "where did I
+  land?".
+- **Previous-app hotkey and Alt+Tab hook.** Flip between two apps without the
+  overlay, or let Switcheroo replace the built-in Alt+Tab, with optional
+  auto-switch when you release Alt.
+- **Quality of life.** Multi-column layout for many windows, resizable popup
+  with remembered size, and optional usage hints shown in the empty overlay.
 
 
 Watchdog and diagnostics
@@ -69,11 +112,10 @@ context. CLR FailFast can provide only an exit event; its dump retains remaining
 memory but may lack the original fault context. Killing the watchdog also ends
 its owned core/helper job. Ordinary external applications are not owned by that job.
 
-Switch feedback now combines the border pulse with a small, click-through blue
-dot at the activated window's center. Its soft edge and opacity fade over 600 ms.
-Options uses two columns with Shortcuts, Behavior, Appearance and Run groups.
-New and missing settings use the saved preference baseline; existing explicit
-settings are preserved.
+_Options_ are grouped into Shortcuts, Behavior, Appearance and Run across two
+columns. New and missing settings use the saved preference baseline; existing
+explicit settings are preserved.
+
 
 Automated verification
 ----------------------
@@ -88,15 +130,17 @@ History
 
 Switcheroo was originally developed by [James Sulak](https://github.com/jsulak).
 
-[Regin Larsen](https://github.com/kvakulo) took over the project in 2014 and is the current maintainer.
+[Regin Larsen](https://github.com/kvakulo) took over the project in 2014 and is the current maintainer of the upstream project.
+
+This fork ([switcheroo_plus](https://github.com/friedikitty/switcheroo_plus)) adds the features listed above.
 
 
 How to contribute
 -----------------
 
-Please report any bug you encounter by [submitting an issue](https://github.com/kvakulo/Switcheroo/issues/new).
+Please report any bug you encounter by [submitting an issue](https://github.com/friedikitty/switcheroo_plus/issues/new).
 
-If you have an idea how to improve Switcheroo, then don't be shy to submit it as well.
+If you have an idea how to improve Switcheroo Plus, then don't be shy to submit it as well.
 
 Pull requests are greatly appreciated. If you plan a larger feature, then please get in contact, so we can coordinate the efforts.
 

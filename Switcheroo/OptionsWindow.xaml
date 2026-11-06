@@ -80,7 +80,7 @@
                             <CheckBox Name="SwitchHighlightCheckBox" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Highlight the window you switch to" />
                             </CheckBox>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Show an accent border and a fading blue dot at the center of the activated window.</TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Show an accent border and a blue dot at the center of the activated window.</TextBlock>
                             <CheckBox Name="OpenUsageHintsByDefaultCheckBox" Margin="0,5,0,4">
                                 <TextBlock TextWrapping="Wrap" Text="Open the usage hints by default" />
                             </CheckBox>
