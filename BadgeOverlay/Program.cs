@@ -70,6 +70,17 @@ namespace SwitcherooBadgeOverlay
         // scan, which does not know the switcher's window list yet.
         private static HashSet<string> scannedTitles = new HashSet<string>(StringComparer.Ordinal);
         private static bool scannedTitlesKnown;
+        // Titles the current cached geometry actually maps to a button. A scan
+        // that drops one of these is a partial UIA snapshot (the taskbar was
+        // caught mid-relayout, e.g. right after a window closed), not a real
+        // change: publishing it would hide a badge that is still on screen.
+        private static HashSet<string> cachedMatchedTitles = new HashSet<string>(StringComparer.Ordinal);
+        private static int rejectedScans;
+        private const int MaxRejectedScans = 2;
+        // A rejected (partial) scan leaves the cache looking fresh by title set;
+        // this flag keeps the retry loop from concluding there is nothing to do.
+        private static bool refreshRejected;
+        private static DispatcherTimer refreshRetryTimer;
         private static bool refreshRunning;
         private static DateTime lastScanStartUtc = DateTime.MinValue;
 
@@ -92,6 +103,9 @@ namespace SwitcherooBadgeOverlay
         private static int lastMoves;
         private static long lastMoveMs;
         private static string lastStaleReason = "";
+        // Test-only: truncate the UIA result so a partial snapshot can be
+        // reproduced without fighting real taskbar timing.
+        private static volatile int testScanLimit = -1;
 
         [STAThread]
         private static int Main()
@@ -224,6 +238,27 @@ namespace SwitcherooBadgeOverlay
                     return "{\"ok\":true}";
                 case "stats":
                     return RunOnUi(BuildStats);
+                case "testscanlimit":
+                {
+                    if (!Switcheroo.Shell.ShellProtocol.TestMode)
+                        return "{\"error\":\"test mode required\"}";
+                    var raw = request.ContainsKey("limit") ? Convert.ToString(request["limit"]) : "-1";
+                    int limit;
+                    int.TryParse(raw, out limit);
+                    testScanLimit = limit;
+                    return "{\"ok\":true,\"limit\":" + limit + "}";
+                }
+                case "testscan":
+                {
+                    if (!Switcheroo.Shell.ShellProtocol.TestMode)
+                        return "{\"error\":\"test mode required\"}";
+                    RunInBackgroundOnUi(() =>
+                    {
+                        if (currentWindows.Count > 0)
+                            QueueRefresh(Titles(currentWindows), true);
+                    });
+                    return "{\"ok\":true}";
+                }
                 case "getbadges":
                 {
                     var badges = RunOnUi(() =>
@@ -274,6 +309,8 @@ namespace SwitcherooBadgeOverlay
             sb.Append(",\"traySignature\":").Append(ComputeTraySignature().Length);
             sb.Append(",\"staleReason\":\"").Append(lastStaleReason).Append("\"");
             sb.Append(",\"cacheTitles\":").Append(scannedTitlesKnown ? scannedTitles.Count : -1);
+            sb.Append(",\"matchedTitles\":").Append(cachedMatchedTitles.Count);
+            sb.Append(",\"rejectedScans\":").Append(rejectedScans);
             sb.Append(",\"showTitles\":").Append(currentWindows.Count);
             sb.Append("}");
             return sb.ToString();
@@ -333,24 +370,117 @@ namespace SwitcherooBadgeOverlay
             }
 
             var titles = Titles(windows);
-            string staleReason;
+            // Baseline for scan validation: what can the geometry we already
+            // have actually draw for this window set?
+            cachedMatchedTitles = TitlesMatchedBy(cachedButtons, titles);
+            var staleReason = GetStaleReason(titles, signature);
+            lastStaleReason = staleReason;
+            if (staleReason.Length > 0 && !QueueRefresh(titles))
+                ScheduleRefreshRetry(RemainingThrottleMs());
+        }
+
+        /// <summary>
+        /// Why the cached geometry should be refreshed for this window set.
+        /// Empty when it can be used as-is.
+        /// </summary>
+        private static string GetStaleReason(HashSet<string> titles, string signature)
+        {
             if (cachedButtons.Count == 0)
-                staleReason = "no-cache";
-            else if (signature != cachedTraySignature)
-                staleReason = "signature";
-            else if (!scannedTitlesKnown)
-                staleReason = "unknown-titles";
-            else if (!SameTitles(titles, scannedTitles))
+                return "no-cache";
+            if (signature != cachedTraySignature)
+                return "signature";
+            if (!scannedTitlesKnown)
+                return "unknown-titles";
+            if (refreshRejected)
+                return "rejected-scan";
+            if (!SameTitles(titles, scannedTitles))
                 // A window opened, closed or was retitled: button rects may have
                 // shifted, so the cached geometry needs one more look.
-                staleReason = "titles";
-            else if ((DateTime.UtcNow - lastRefreshUtc).TotalMilliseconds > CacheMaxAgeMs)
-                staleReason = "age";
+                return "titles";
+            if ((DateTime.UtcNow - lastRefreshUtc).TotalMilliseconds > CacheMaxAgeMs)
+                return "age";
+            return "";
+        }
+
+        /// <summary>Titles from <paramref name="titles"/> that at least one scanned button can match.</summary>
+        private static HashSet<string> TitlesMatchedBy(List<TaskbarButton> buttons, HashSet<string> titles)
+        {
+            var matched = new HashSet<string>(StringComparer.Ordinal);
+            if (buttons == null || titles == null || titles.Count == 0)
+                return matched;
+            foreach (var title in titles)
+            {
+                for (var i = 0; i < buttons.Count; i++)
+                {
+                    if (NameMatchesTitle(buttons[i].Name, title))
+                    {
+                        matched.Add(title);
+                        break;
+                    }
+                }
+            }
+            return matched;
+        }
+
+        private static int RemainingThrottleMs()
+        {
+            var elapsed = (DateTime.UtcNow - lastScanStartUtc).TotalMilliseconds;
+            var remaining = (int)(MinScanIntervalMs - elapsed);
+            return remaining < 50 ? 50 : remaining;
+        }
+
+        /// <summary>
+        /// Retries a refresh that had to be skipped (scan throttle) or whose UIA
+        /// result was rejected as partial. Without this a show right after a
+        /// window close could stay unbadged until the overlay is reopened.
+        /// </summary>
+        private static void ScheduleRefreshRetry(int delayMs)
+        {
+            if (refreshRetryTimer == null)
+            {
+                refreshRetryTimer = new DispatcherTimer();
+                refreshRetryTimer.Tick += (s, e) =>
+                {
+                    refreshRetryTimer.Stop();
+                    RefreshRetryTick();
+                };
+            }
             else
-                staleReason = "";
+            {
+                refreshRetryTimer.Stop();
+            }
+            refreshRetryTimer.Interval = TimeSpan.FromMilliseconds(delayMs < 50 ? 50 : delayMs);
+            refreshRetryTimer.Start();
+        }
+
+        private static void RefreshRetryTick()
+        {
+            if (badgesSuppressed || currentWindows.Count == 0)
+                return;
+            if (refreshRunning)
+            {
+                // The in-flight scan re-places on completion; keep a timer armed
+                // so a scan that was requested for an older window set still gets
+                // a follow-up for this one.
+                ScheduleRefreshRetry(250);
+                return;
+            }
+            var signature = ComputeTraySignature();
+            if (signature.Length == 0)
+                return;
+            var titles = Titles(currentWindows);
+            var staleReason = GetStaleReason(titles, signature);
             lastStaleReason = staleReason;
-            if (staleReason.Length > 0)
-                QueueRefresh(titles);
+            if (staleReason.Length == 0)
+                return;
+            if (!QueueRefresh(titles))
+                ScheduleRefreshRetry(RemainingThrottleMs());
+        }
+
+        private static void StopRefreshRetry()
+        {
+            if (refreshRetryTimer != null)
+                refreshRetryTimer.Stop();
         }
 
         private static bool SameTitles(HashSet<string> a, HashSet<string> b)
@@ -367,6 +497,7 @@ namespace SwitcherooBadgeOverlay
 
         private static void HideAll()
         {
+            StopRefreshRetry();
             if (timeoutTimer != null)
                 timeoutTimer.Stop();
             ApplyPositions(new Dictionary<string, int[]>(), false);
@@ -411,19 +542,20 @@ namespace SwitcherooBadgeOverlay
             QueueRefresh(null);
         }
 
-        private static void QueueRefresh(HashSet<string> titles)
+        private static bool QueueRefresh(HashSet<string> titles, bool force = false)
         {
             // A UIA scan costs a second or more; never run them back to back. A
-            // later show re-checks the staleness condition on its own.
+            // later show re-checks the staleness condition on its own (and a
+            // skipped show schedules a delayed retry).
             if (refreshRunning ||
-                (DateTime.UtcNow - lastScanStartUtc).TotalMilliseconds < MinScanIntervalMs)
+                (!force && (DateTime.UtcNow - lastScanStartUtc).TotalMilliseconds < MinScanIntervalMs))
             {
                 skippedRefreshes++;
-                return;
+                return false;
             }
             var signature = ComputeTraySignature();
             if (signature.Length == 0)
-                return;
+                return false;
 
             refreshRunning = true;
             lastScanStartUtc = DateTime.UtcNow;
@@ -433,6 +565,7 @@ namespace SwitcherooBadgeOverlay
                 Name = "BadgeUiaScan"
             };
             worker.Start();
+            return true;
         }
 
         /// <summary>
@@ -472,6 +605,43 @@ namespace SwitcherooBadgeOverlay
             refreshRunning = false;
             lastRefreshMs = elapsedMs;
 
+            // Validate against the show's window set too: a warm scan (titles
+            // null) that lands during a show is still useful, but only the
+            // current titles say whether the snapshot is complete.
+            var expected = titles;
+            if (expected == null && !badgesSuppressed && currentWindows.Count > 0)
+                expected = Titles(currentWindows);
+            HashSet<string> matched = null;
+            if (buttons.Count > 0 && expected != null)
+            {
+                matched = TitlesMatchedBy(buttons, expected);
+                var lostKnown = false;
+                foreach (var title in cachedMatchedTitles)
+                {
+                    if (expected.Contains(title) && !matched.Contains(title))
+                    {
+                        lostKnown = true;
+                        break;
+                    }
+                }
+                // A badge that was drawable from the old cache but is not in this
+                // snapshot means UIA caught the taskbar mid-relayout (typically
+                // right after a window closed). With no baseline at all (cold
+                // start) any shortfall can be transient too.
+                var coldMiss = cachedMatchedTitles.Count == 0 && matched.Count < expected.Count;
+                if ((lostKnown || coldMiss) && rejectedScans < MaxRejectedScans)
+                {
+                    // Publishing this snapshot would hide those badges and mark
+                    // the title set as current, so they would never be redrawn.
+                    // Keep the previous geometry and try again shortly.
+                    rejectedScans++;
+                    refreshRejected = true;
+                    lastStaleReason = lostKnown ? "incomplete-scan" : "cold-scan";
+                    ScheduleRefreshRetry(MinScanIntervalMs);
+                    return;
+                }
+            }
+
             if (buttons.Count > 0)
             {
                 cachedButtons = buttons;
@@ -479,6 +649,12 @@ namespace SwitcherooBadgeOverlay
                 lastRefreshUtc = DateTime.UtcNow;
                 scannedTitles = titles ?? new HashSet<string>(StringComparer.Ordinal);
                 scannedTitlesKnown = titles != null;
+                if (matched != null)
+                    cachedMatchedTitles = matched;
+                else
+                    cachedMatchedTitles = new HashSet<string>(StringComparer.Ordinal);
+                rejectedScans = 0;
+                refreshRejected = false;
                 PrecreateChips(buttons.Count);
             }
             // On an empty scan keep the previous cache: the next show can still
@@ -914,6 +1090,9 @@ namespace SwitcherooBadgeOverlay
                     }
                 }
             }
+            var limit = testScanLimit;
+            if (limit >= 0 && buttons.Count > limit)
+                buttons = buttons.GetRange(0, limit);
             return buttons;
         }
 
