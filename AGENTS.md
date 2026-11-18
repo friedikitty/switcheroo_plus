@@ -2,6 +2,14 @@
 
 ## Agent Safety Rules
 
+### Prefer off-desktop subprogram tests (top rule)
+- **Never test by taking over the user's desktop.** Do not show the switcher overlay, stage visible windows, open dialogs, move the mouse, or send keyboard input to exercise a change. Those steal focus and make the machine unusable; a report that the user could not type is a test failure, not a clever verification.
+- **Test the system under test directly.** For badge/rendering changes, start BadgeOverlay\bin\<Config>\switcheroo_plus_badges.exe standalone with SWITCHEROO_TEST_MODE=1 and a unique SWITCHEROO_TEST_ID (unique pipe/mutex), drive it over the badge pipe, and exit it yourself. No main app/overlay is involved.
+- **Keep geometry off-screen.** Use testseedcache to install synthetic taskbar buttons/titles with rects such as 5000,5000; verify placement with getbadges/stats; verify z-order with an off-screen topmost probe window plus EnumWindows order. This is how the HWND_TOPMOST/SWP_NOZORDER badge bug was proven without any visible window.
+- **Use passive layout hooks.** For Options/layout checks, start an isolated test-mode core and use optionspassive at -5000,-5000 (non-activating, off-screen), then read controls with UI Automation; exit through the automation pipe. showpassive is the equivalent for overlay layout.
+- **Prefer deterministic hooks over timing races:** testseedcache, testscanlimit, testscan, getbadges, stats. They make a repro repeatable without a real window close, a real taskbar animation, or a person at the keyboard.
+- If a test genuinely needs the live desktop, ask the user first, bound the interaction with a timeout, and clean up (hide/exit) immediately. The general GUI-launch rule below still applies.
+
 ### Commit every iteration
 - At the end of **every** working iteration (feature, fix, or verification cycle), commit the changes. Do not leave completed work uncommitted.
 - Feature/fix work happens on a development branch checked out in the git worktree (e.g. `G:\github\switcheroo_plus_dev`); the main checkout stays on clean `master`.
