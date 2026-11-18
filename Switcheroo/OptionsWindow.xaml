@@ -66,7 +66,7 @@
                             </CheckBox>
                             <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Arrange large window lists in columns. Resize the overlay to adjust the layout.</TextBlock>
                             <CheckBox Name="TaskbarBadgesCheckBox" Margin="0,5,0,4" Checked="TaskbarBadgesCheckBox_OnChecked" Unchecked="TaskbarBadgesCheckBox_OnUnchecked">
-                                <TextBlock TextWrapping="Wrap" Text="Show quick-switch keys on taskbar buttons" />
+                                <TextBlock TextWrapping="Wrap" Text="Draw taskbar badges with quick-switch keys" />
                             </CheckBox>
                             <Grid Margin="20,2,0,4">
                                 <Grid.ColumnDefinitions>
@@ -76,7 +76,7 @@
                                 <TextBlock VerticalAlignment="Center" FontSize="10" Foreground="DimGray" Text="Auto-hide badges after (seconds, 0 = never):" TextWrapping="Wrap" />
                                 <TextBox Name="BadgeTimeoutBox" Width="40" Margin="6,0,0,0" HorizontalAlignment="Left" VerticalContentAlignment="Center" Grid.Column="1" />
                             </Grid>
-                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Show each window’s shortcut on its taskbar button. Requires quick-switch keys.</TextBlock>
+                            <TextBlock Margin="20,0,0,10" FontSize="11" Foreground="DimGray" TextWrapping="Wrap">Draw each window’s shortcut key on its taskbar button. Requires quick-switch keys.</TextBlock>
                             <CheckBox Name="SwitchHighlightCheckBox" Margin="0,5,0,4" Checked="SwitchHighlightCheckBox_Checked" Unchecked="SwitchHighlightCheckBox_Unchecked">
                                 <TextBlock TextWrapping="Wrap" Text="Highlight the window you switch to" />
                             </CheckBox>

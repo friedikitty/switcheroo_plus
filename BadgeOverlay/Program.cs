@@ -259,6 +259,65 @@ namespace SwitcherooBadgeOverlay
                     });
                     return "{\"ok\":true}";
                 }
+                case "testseedcache":
+                {
+                    // Test-only: install a synthetic taskbar cache so placement and
+                    // z-order can be exercised without touching the real taskbar.
+                    if (!Switcheroo.Shell.ShellProtocol.TestMode)
+                        return "{\"error\":\"test mode required\"}";
+                    var buttons = new List<TaskbarButton>();
+                    object buttonsObj;
+                    if (request.TryGetValue("buttons", out buttonsObj) &&
+                        buttonsObj is System.Collections.IEnumerable)
+                    {
+                        foreach (var item in (System.Collections.IEnumerable)buttonsObj)
+                        {
+                            var dict = item as Dictionary<string, object>;
+                            if (dict == null)
+                                continue;
+                            object nameObj, xObj, yObj, wObj, hObj;
+                            dict.TryGetValue("name", out nameObj);
+                            dict.TryGetValue("x", out xObj);
+                            dict.TryGetValue("y", out yObj);
+                            dict.TryGetValue("w", out wObj);
+                            dict.TryGetValue("h", out hObj);
+                            int x, y, w, h;
+                            int.TryParse(Convert.ToString(xObj), out x);
+                            int.TryParse(Convert.ToString(yObj), out y);
+                            int.TryParse(Convert.ToString(wObj), out w);
+                            int.TryParse(Convert.ToString(hObj), out h);
+                            var name = Convert.ToString(nameObj) ?? "";
+                            if (name.Length == 0 || w <= 0 || h <= 0)
+                                continue;
+                            buttons.Add(new TaskbarButton { Name = name, Rect = new Rect(x, y, w, h) });
+                        }
+                    }
+                    var titles = new HashSet<string>(StringComparer.Ordinal);
+                    object titlesObj;
+                    if (request.TryGetValue("titles", out titlesObj) &&
+                        titlesObj is System.Collections.IEnumerable)
+                    {
+                        foreach (var item in (System.Collections.IEnumerable)titlesObj)
+                        {
+                            var title = Convert.ToString(item) ?? "";
+                            if (title.Length > 0)
+                                titles.Add(title);
+                        }
+                    }
+                    RunOnUi(() =>
+                    {
+                        cachedButtons = buttons;
+                        cachedTraySignature = ComputeTraySignature();
+                        lastRefreshUtc = DateTime.UtcNow;
+                        scannedTitles = titles;
+                        scannedTitlesKnown = true;
+                        cachedMatchedTitles = TitlesMatchedBy(buttons, titles);
+                        rejectedScans = 0;
+                        refreshRejected = false;
+                        refreshRunning = false;
+                    });
+                    return "{\"ok\":true,\"buttons\":" + buttons.Count + ",\"titles\":" + titles.Count + "}";
+                }
                 case "getbadges":
                 {
                     var badges = RunOnUi(() =>
@@ -810,9 +869,16 @@ namespace SwitcherooBadgeOverlay
             }
 
             var moves = new List<Slot>();
+            var isShow = positions.Count > 0;
             foreach (var slot in slots)
-                if (slot.Chip.X != slot.X || slot.Chip.Y != slot.Y)
+            {
+                // A show re-asserts topmost even for chips that do not move:
+                // another topmost window (the taskbar after a window close, a
+                // flyout, the overlay) can sit above an already-created chip and
+                // hide it while its coordinates still look correct.
+                if (slot.Chip.X != slot.X || slot.Chip.Y != slot.Y || (isShow && slot.Visible))
                     moves.Add(slot);
+            }
 
             if (moves.Count > 0)
                 ApplyMoves(moves);
@@ -843,8 +909,8 @@ namespace SwitcherooBadgeOverlay
             {
                 foreach (var slot in moves)
                 {
-                    var next = DeferWindowPos(hdwp, slot.Chip.Handle, IntPtr.Zero,
-                        slot.X, slot.Y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                    var next = DeferWindowPos(hdwp, slot.Chip.Handle, HWND_TOPMOST,
+                        slot.X, slot.Y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                     if (next == IntPtr.Zero)
                     {
                         // Leave the failed batch alone: the API forbids ending it
@@ -871,8 +937,8 @@ namespace SwitcherooBadgeOverlay
             // for the windows that actually moved.
             foreach (var slot in moves)
             {
-                if (SetWindowPos(slot.Chip.Handle, IntPtr.Zero, slot.X, slot.Y, 0, 0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE))
+                if (SetWindowPos(slot.Chip.Handle, HWND_TOPMOST, slot.X, slot.Y, 0, 0,
+                    SWP_NOSIZE | SWP_NOACTIVATE))
                 {
                     slot.Chip.X = slot.X;
                     slot.Chip.Y = slot.Y;
@@ -938,8 +1004,8 @@ namespace SwitcherooBadgeOverlay
             // Show once and park it: toggling IsVisible per show is far more
             // expensive than moving an already-shown window.
             window.Show();
-            SetWindowPos(handle, IntPtr.Zero, OffScreen, OffScreen, 0, 0,
-                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            SetWindowPos(handle, HWND_TOPMOST, OffScreen, OffScreen, 0, 0,
+                SWP_NOSIZE | SWP_NOACTIVATE);
             return new Chip
             {
                 Window = window,
@@ -1098,8 +1164,8 @@ namespace SwitcherooBadgeOverlay
 
         // ----- Win32 -----
 
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private const uint SWP_NOSIZE = 0x0001;
-        private const uint SWP_NOZORDER = 0x0004;
         private const uint SWP_NOACTIVATE = 0x0010;
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
